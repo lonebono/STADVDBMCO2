@@ -1,11 +1,15 @@
-// webapp/app/api/transaction/start/route.ts
+/* 
+
+// example route handler for starting a transaction
 
 export async function POST(req: Request) {
-  return new Response(
-    JSON.stringify({ message: "Transaction start placeholder" }),
-    {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    }
-  );
+  const body = await req.json();
+
+  return Response.json({
+    ok: true,
+    message: "Transaction started",
+    data: body,
+  });
 }
+
+*/
