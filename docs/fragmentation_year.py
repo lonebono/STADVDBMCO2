@@ -1,6 +1,6 @@
 from collections import Counter
 
-file_path = "webapp/title.basics.tsv"
+file_path = "../webapp/title.basics.tsv"
 node0_rows = 20000  
 
 years = []
