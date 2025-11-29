@@ -25,4 +25,7 @@ pip3 install mysql-connector-python
 -- run the python script to load data 
 python3 load_sample_data.py
 
+-- check if data is loaded
+SELECT COUNT(*) FROM title_basics;
 
+SELECT * FROM title_basics LIMIT 10;
