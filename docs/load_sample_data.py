@@ -12,9 +12,15 @@ cur = conn.cursor()
 with open('sample.title.basics.tsv') as f:
     reader = csv.reader(f, delimiter='\t')
     for row in reader:
+        tconst, titleType, primaryTitle, startYear, runtimeMinutes = row
+        
+        # Convert \N to None
+        startYear = int(startYear) if startYear != r'\N' else None
+        runtimeMinutes = int(runtimeMinutes) if runtimeMinutes != r'\N' else None
+
         cur.execute(
             "INSERT INTO title_basics (tconst, titleType, primaryTitle, startYear, runtimeMinutes) VALUES (%s,%s,%s,%s,%s)",
-            row
+            (tconst, titleType, primaryTitle, startYear, runtimeMinutes)
         )
 
 conn.commit()

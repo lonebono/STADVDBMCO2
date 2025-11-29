@@ -13,7 +13,7 @@ CREATE TABLE title_basics (
     titleType VARCHAR(50),
     primaryTitle VARCHAR(500),
     startYear INT,
-    runtimeMinutes INT
+    runtimeMinutes INT NULL
 );
 
 -- install pip and mysql connector for python3
