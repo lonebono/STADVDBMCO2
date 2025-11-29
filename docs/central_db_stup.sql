@@ -1,4 +1,5 @@
 -- SSH into the Central Node first
+ssh root@ccscloud.dlsu.edu.ph -p 60505
 
 -- connect
 mysql -u mco2 -p
@@ -14,4 +15,14 @@ CREATE TABLE title_basics (
     startYear INT,
     runtimeMinutes INT
 );
+
+-- install pip and mysql connector for python3
+apt update
+apt install -y python3-pip
+
+pip3 install mysql-connector-python
+
+-- run the python script to load data 
+python3 load_sample_data.py
+
 
