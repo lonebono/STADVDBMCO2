@@ -9,7 +9,7 @@ conn = mysql.connector.connect(
 )
 cur = conn.cursor()
 
-with open('STADVDBMCO2/docs/sample.title.basics.tsv') as f:
+with open('/root/STADVDBMCO2/docs/sample.title.basics.tsv') as f:
     reader = csv.reader(f, delimiter='\t')
     for row in reader:
         cur.execute(
