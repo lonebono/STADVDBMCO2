@@ -1,29 +1,35 @@
-# Update system
+# update system
 apt update && apt upgrade -y
 
-# Install MySQL
+# isntall MySQL
 apt install -y mysql-server
 systemctl enable mysql
 systemctl start mysql
 
-# Allow remote MySQL access
+# allow remote MySQL access
 sed -i "s/^bind-address.*/bind-address = 0.0.0.0/" /etc/mysql/mysql.conf.d/mysqld.cnf
 systemctl restart mysql
 
-# Create database and user
+# create database and user
 mysql -e "CREATE DATABASE IF NOT EXISTS imdbDDB;"
 mysql -e "CREATE USER IF NOT EXISTS 'mco2'@'%' IDENTIFIED BY 'stadvdbgroup10';"
 mysql -e "GRANT ALL PRIVILEGES ON imdbDDB.* TO 'mco2'@'%'; FLUSH PRIVILEGES;"
 
-# Intall curl
+# install curl
 apt install -y curl
 
-# Install Node.js LTS
+# install Node.js LTS
 curl -fsSL https://deb.nodesource.com/setup_lts.x | bash -
 apt install -y nodejs
 
-# Install pm2 (process manager)
+# install pm2 (process manager)
 npm install -g pm2
 
-# Install git
+# install git
 apt install -y git
+
+
+# set pm2 to start on boot
+pm2 start server.js --name webapp
+pm2 save
+pm2 startup
