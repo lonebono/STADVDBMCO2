@@ -10,13 +10,17 @@ systemctl start mysql
 sed -i "s/^bind-address.*/bind-address = 0.0.0.0/" /etc/mysql/mysql.conf.d/mysqld.cnf
 systemctl restart mysql
 
-# create database and user
+# create database and user #edit the password in Node 2
 mysql -e "CREATE DATABASE IF NOT EXISTS imdbDDB;"
-mysql -e "CREATE USER IF NOT EXISTS 'mco2'@'%' IDENTIFIED BY 'stadvdbgroup10';"
-mysql -e "GRANT ALL PRIVILEGES ON imdbDDB.* TO 'mco2'@'%'; FLUSH PRIVILEGES;"
+mysql -e "CREATE USER IF NOT EXISTS 'mco2'@'localhost' IDENTIFIED BY 'w5EuLsQ8WHk2XyfJaZhSNen4';"
+mysql -e "CREATE USER IF NOT EXISTS 'mco2'@'%' IDENTIFIED BY 'w5EuLsQ8WHk2XyfJaZhSNen4';" 
+mysql -e "GRANT ALL PRIVILEGES ON imdbDDB.* TO 'mco2'@'localhost';"
+mysql -e "GRANT ALL PRIVILEGES ON imdbDDB.* TO 'mco2'@'%';"
+mysql -e "FLUSH PRIVILEGES;"
+
 
 # install git
-apt install -y git #install git to node 1 and 2
+apt install -y git #install git to node 2
 
 # did not use below yet
 
