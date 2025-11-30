@@ -9,11 +9,16 @@ const DB_PASS = process.env.DB_PASS!;
 const DB_NAME = process.env.DB_NAME!;
 const DB_HOST = process.env.DB_HOST!;
 
+// Ports here are mostly for informational purposes
 const VM_PORTS: Record<Server, number> = {
   server0: Number(process.env.SERVER0_PORT),
   server1: Number(process.env.SERVER1_PORT),
   server2: Number(process.env.SERVER2_PORT),
 };
+
+// URL for central node API (adjust external IP/port if needed)
+const CENTRAL_NODE_URL =
+  "http://ccscloud.dlsu.edu.ph:60205/api/db?server=server0";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -24,7 +29,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // Always connect to LOCAL MySQL on this VM
+    // Connect to LOCAL MySQL on this VM
     const conn = await mysql.createConnection({
       host: DB_HOST,
       user: DB_USER,
@@ -36,18 +41,30 @@ export async function GET(req: NextRequest) {
     const [rows] = await conn.execute<RowDataPacket[]>(
       "SELECT COUNT(*) AS count FROM title_basics"
     );
+    const localCount = rows[0]["count"];
 
     await conn.end();
 
-    // Calculate partition percent relative to server0 (central node)
-    const centralCount = server === "server0" ? rows[0]["count"] : null;
+    // Fetch central node count only if we're NOT the central node
+    let centralCount = localCount;
+    if (server !== "server0") {
+      try {
+        const res = await fetch(CENTRAL_NODE_URL);
+        const data = await res.json();
+        if (data.rowCount) centralCount = data.rowCount;
+      } catch (err) {
+        console.warn("Failed to fetch central node count:", err);
+      }
+    }
+
+    const partitionPercent = Math.round((localCount / centralCount) * 100);
 
     return NextResponse.json({
       server,
-      rowCount: rows[0]["count"],
+      rowCount: localCount,
       online: true,
-      partitionPort: VM_PORTS[server],
-      centralCount, // optional, can use for dashboard percentage calculation
+      partitionPercent,
+      centralCount,
     });
   } catch (err: any) {
     return NextResponse.json(
