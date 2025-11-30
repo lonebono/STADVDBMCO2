@@ -1,5 +1,5 @@
 import csv
-import mysql.connector
+import mysql.connector # type: ignore
 
 conn = mysql.connector.connect(
     host='localhost',

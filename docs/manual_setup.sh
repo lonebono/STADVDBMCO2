@@ -20,7 +20,7 @@ mysql -e "FLUSH PRIVILEGES;"
 
 
 # install git
-apt install -y git #install git to node 2
+apt install -y git
 
 # did not use below yet
 
