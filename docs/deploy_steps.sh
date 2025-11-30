@@ -24,7 +24,30 @@ cd root/STADVDBMCO2/webapp
 
 # install .env.local file
 nano .env.local
-# refer to your .env.local and copy paste
+# VM0 CONTENT:
+DB_USER=mco2
+DB_PASS=w5EuLsQ8WHk2XyfJaZhSNen4
+DB_NAME=imdbDDB
+DB_HOST=localhost
+SERVER0_PORT=3306
+SERVER1_PORT=60806
+SERVER2_PORT=60807
+# VM1 CONTENT:
+DB_USER=mco2
+DB_PASS=w5EuLsQ8WHk2XyfJaZhSNen4
+DB_NAME=imdbDDB
+DB_HOST=localhost
+SERVER0_PORT=60805
+SERVER1_PORT=3306
+SERVER2_PORT=60807
+# VM2 CONTENT:
+DB_USER=mco2
+DB_PASS=w5EuLsQ8WHk2XyfJaZhSNen4
+DB_NAME=imdbDDB
+DB_HOST=localhost
+SERVER0_PORT=60805
+SERVER1_PORT=60806
+SERVER2_PORT=3306
 
 # install dependencies
 npm install
