@@ -1,4 +1,4 @@
--- SSH into the Central Node first
+-- SSH into the Node first
 ssh root@ccscloud.dlsu.edu.ph -p 60505 -- server 0
 ssh root@ccscloud.dlsu.edu.ph -p 60506 -- server 1
 ssh root@ccscloud.dlsu.edu.ph -p 60507 -- server 2

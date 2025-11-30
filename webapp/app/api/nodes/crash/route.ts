@@ -1,12 +1,11 @@
-/*
+// webapp/app/api/nodes/crash/route.ts
 
-// example route handler for simulating a node crash
-
-export async function POST() {
-  return Response.json({
-    ok: true,
-    message: "Node crash simulation triggered",
-  });
+export async function POST(req: Request) {
+  return new Response(
+    JSON.stringify({ message: "Node crash endpoint placeholder" }),
+    {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }
+  );
 }
-
-*/

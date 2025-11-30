@@ -1,4 +1,3 @@
-// webapp/app/api/db/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import mysql, { RowDataPacket } from "mysql2/promise";
 
@@ -19,8 +18,9 @@ export async function GET(req: NextRequest) {
     "server0") as keyof typeof VM_PORTS;
   const port = VM_PORTS[server];
 
-  if (!port)
+  if (!port) {
     return NextResponse.json({ error: "Invalid server" }, { status: 400 });
+  }
 
   try {
     const conn = await mysql.createConnection({
@@ -39,12 +39,16 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       server,
-      rowCount: rows[0]["count"],
+      rowCount: rows[0]["count"] ?? 0,
+      online: true,
     });
   } catch (err: any) {
-    return NextResponse.json(
-      { error: "DB connection failed", details: err.message },
-      { status: 500 }
-    );
+    console.error(`Failed to fetch DB for ${server}:`, err.message);
+    return NextResponse.json({
+      server,
+      rowCount: 0,
+      online: false,
+      error: err.message,
+    });
   }
 }
