@@ -1,5 +1,7 @@
 -- SSH into the Central Node first
-ssh root@ccscloud.dlsu.edu.ph -p 60505
+ssh root@ccscloud.dlsu.edu.ph -p 60505 -- server 0
+ssh root@ccscloud.dlsu.edu.ph -p 60506 -- server 1
+ssh root@ccscloud.dlsu.edu.ph -p 60507 -- server 2
 
 -- connect
 mysql -u mco2 -p
