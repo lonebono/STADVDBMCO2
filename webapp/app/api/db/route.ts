@@ -1,34 +1,36 @@
+// webapp/app/api/db/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import mysql, { RowDataPacket } from "mysql2/promise";
 
-const VM_PORTS = {
-  server0: Number(process.env.SERVER0_PORT),
-  server1: Number(process.env.SERVER1_PORT),
-  server2: Number(process.env.SERVER2_PORT),
-};
+type Server = "server0" | "server1" | "server2";
 
 const DB_USER = process.env.DB_USER!;
 const DB_PASS = process.env.DB_PASS!;
 const DB_NAME = process.env.DB_NAME!;
 const DB_HOST = process.env.DB_HOST!;
 
+const VM_PORTS: Record<Server, number> = {
+  server0: Number(process.env.SERVER0_PORT),
+  server1: Number(process.env.SERVER1_PORT),
+  server2: Number(process.env.SERVER2_PORT),
+};
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const server = (searchParams.get("server") ||
-    "server0") as keyof typeof VM_PORTS;
-  const port = VM_PORTS[server];
+  const server = (searchParams.get("server") || "server0") as Server;
 
-  if (!port) {
+  if (!(server in VM_PORTS)) {
     return NextResponse.json({ error: "Invalid server" }, { status: 400 });
   }
 
   try {
+    // Always connect to LOCAL MySQL on this VM
     const conn = await mysql.createConnection({
       host: DB_HOST,
-      port,
       user: DB_USER,
       password: DB_PASS,
       database: DB_NAME,
+      port: 3306,
     });
 
     const [rows] = await conn.execute<RowDataPacket[]>(
@@ -37,18 +39,20 @@ export async function GET(req: NextRequest) {
 
     await conn.end();
 
+    // Calculate partition percent relative to server0 (central node)
+    const centralCount = server === "server0" ? rows[0]["count"] : null;
+
     return NextResponse.json({
       server,
-      rowCount: rows[0]["count"] ?? 0,
+      rowCount: rows[0]["count"],
       online: true,
+      partitionPort: VM_PORTS[server],
+      centralCount, // optional, can use for dashboard percentage calculation
     });
   } catch (err: any) {
-    console.error(`Failed to fetch DB for ${server}:`, err.message);
-    return NextResponse.json({
-      server,
-      rowCount: 0,
-      online: false,
-      error: err.message,
-    });
+    return NextResponse.json(
+      { error: "DB connection failed", details: err.message, online: false },
+      { status: 500 }
+    );
   }
 }
