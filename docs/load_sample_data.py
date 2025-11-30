@@ -4,7 +4,7 @@ import mysql.connector # type: ignore
 conn = mysql.connector.connect(
     host='localhost',
     user='mco2',
-    password='stadvdbgroup10',
+    password='w5EuLsQ8WHk2XyfJaZhSNen4',
     database='imdbDDB'
 )
 cur = conn.cursor()

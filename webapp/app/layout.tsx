@@ -1,9 +1,6 @@
+// webapp/app/layout.tsx
 import "./globals.css";
-import type { Metadata } from "next";
-
-export const metadata: Metadata = {
-  title: "MCO2",
-};
+import Sidebar from "@/components/Sidebar";
 
 export default function RootLayout({
   children,
@@ -12,7 +9,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="flex h-screen w-screen bg-gray-100">{children}</body>
+      <body className="flex h-screen w-screen bg-gray-900 text-white">
+        <Sidebar />
+        <main className="flex-1 overflow-auto">{children}</main>
+      </body>
     </html>
   );
 }

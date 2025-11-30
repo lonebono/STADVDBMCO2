@@ -1,15 +1,13 @@
-import Sidebar from "@/components/Sidebar";
+// webapp/app/logs/page.tsx
+"use client";
 
-export default function Logs() {
+import LogConsole from "@/components/LogConsole";
+
+export default function LogsPage() {
   return (
-    <>
-      <Sidebar />
-      <main className="flex-1 p-6">
-        <h1 className="text-3xl font-bold">System Logs</h1>
-        <p className="mt-4 text-gray-600">
-          Logs from all nodes will be displayed here.
-        </p>
-      </main>
-    </>
+    <div className="flex flex-col gap-6 p-6 h-full bg-gray-900">
+      <h1 className="text-3xl font-bold text-white">System Logs</h1>
+      <LogConsole />
+    </div>
   );
 }

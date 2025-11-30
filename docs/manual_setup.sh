@@ -10,7 +10,7 @@ systemctl start mysql
 sed -i "s/^bind-address.*/bind-address = 0.0.0.0/" /etc/mysql/mysql.conf.d/mysqld.cnf
 systemctl restart mysql
 
-# create database and user #edit the password in Node 2
+# create database and user 
 mysql -e "CREATE DATABASE IF NOT EXISTS imdbDDB;"
 mysql -e "CREATE USER IF NOT EXISTS 'mco2'@'localhost' IDENTIFIED BY 'w5EuLsQ8WHk2XyfJaZhSNen4';"
 mysql -e "CREATE USER IF NOT EXISTS 'mco2'@'%' IDENTIFIED BY 'w5EuLsQ8WHk2XyfJaZhSNen4';" 

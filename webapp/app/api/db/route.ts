@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
-import mysql, { RowDataPacket } from 'mysql2/promise';
+// webapp/app/api/db/route.ts
+import { NextRequest, NextResponse } from "next/server";
+import mysql, { RowDataPacket } from "mysql2/promise";
 
 const VM_PORTS = {
   server0: Number(process.env.SERVER0_PORT),
@@ -14,10 +15,12 @@ const DB_HOST = process.env.DB_HOST!;
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const server = (searchParams.get('server') || 'server0') as keyof typeof VM_PORTS;
-
+  const server = (searchParams.get("server") ||
+    "server0") as keyof typeof VM_PORTS;
   const port = VM_PORTS[server];
-  if (!port) return NextResponse.json({ error: 'Invalid server' }, { status: 400 });
+
+  if (!port)
+    return NextResponse.json({ error: "Invalid server" }, { status: 400 });
 
   try {
     const conn = await mysql.createConnection({
@@ -28,16 +31,20 @@ export async function GET(req: NextRequest) {
       database: DB_NAME,
     });
 
-    // Use RowDataPacket[] for proper typing
     const [rows] = await conn.execute<RowDataPacket[]>(
-      'SELECT COUNT(*) AS count FROM title_basics'
+      "SELECT COUNT(*) AS count FROM title_basics"
     );
 
     await conn.end();
 
-    // rows[0] is guaranteed because COUNT(*) always returns a row
-    return NextResponse.json({ server, rowCount: rows[0]['count'] });
+    return NextResponse.json({
+      server,
+      rowCount: rows[0]["count"],
+    });
   } catch (err: any) {
-    return NextResponse.json({ error: 'DB connection failed', details: err.message }, { status: 500 });
+    return NextResponse.json(
+      { error: "DB connection failed", details: err.message },
+      { status: 500 }
+    );
   }
 }
