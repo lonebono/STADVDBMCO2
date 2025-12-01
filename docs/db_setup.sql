@@ -69,3 +69,13 @@ LIMIT 10;
 SELECT * FROM title_basics
 ORDER BY startYear ASC, tconst ASC
 LIMIT 10;
+
+-- insert into all nodes for recovery logs
+
+CREATE TABLE IF NOT EXISTS recovery_log (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    failed_node VARCHAR(50) NOT NULL,       -- failed node identifier
+    transaction_data JSON NOT NULL,         -- data they missed
+    status VARCHAR(20) DEFAULT 'PENDING',   -- 'PENDING' or 'RESOLVED'
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+);
