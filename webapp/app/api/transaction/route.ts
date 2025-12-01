@@ -1,22 +1,8 @@
 // webapp/app/api/transaction/route.ts
 
 import { NextRequest, NextResponse } from "next/server";
-import mysql, { RowDataPacket } from "mysql2/promise";
-import fs from "fs/promises";
-import path from "path";
-
-const VM_PORTS = {
-  server0: Number(process.env.SERVER0_PORT), //node 1
-  server1: Number(process.env.SERVER1_PORT), //node 2
-  server2: Number(process.env.SERVER2_PORT), //node 3
-};
-
-const DB_CONFIG = {
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASS,
-  database: process.env.DB_NAME,
-};
+import mysql from "mysql2/promise";
+import { NODES } from "../../../lib/nodes";
 
 const FRAGMENTATION_YEAR = 1919;
 
@@ -31,125 +17,109 @@ export async function POST(req: NextRequest) {
     runtimeMinutes,
     isolationLevel = "READ COMMITTED",
     sleepTime = 0,
-    targetNode = "central",
   } = body;
 
-  let primaryServer: keyof typeof VM_PORTS;
-  let replicaServer: keyof typeof VM_PORTS;
+  // determine target node based on startYear
+  const centralNode = "server0";
+  const fragmentNode = startYear < FRAGMENTATION_YEAR ? "server1" : "server2";
+  const targetNodes = [centralNode, fragmentNode];
+  const results: Record<string, string> = {};
 
-  //determine primary and fragment servers based on targetNode and startYear
-  if (targetNode === "central") {
-    primaryServer = "server0";
-    replicaServer = startYear < FRAGMENTATION_YEAR ? "server1" : "server2";
-  } else {
-    primaryServer = startYear < FRAGMENTATION_YEAR ? "server1" : "server2";
-    replicaServer = "server0";
+  for (const nodeKey of targetNodes) {
+    // @ts-ignore
+    const config = NODES[nodeKey];
+
+    try {
+      console.log(
+        `Connecting to ${nodeKey} at ${config.host}:${config.port}...`
+      );
+
+      const conn = await mysql.createConnection({
+        host: config.host,
+        port: config.port,
+        user: config.user,
+        password: config.password,
+        database: config.database,
+      });
+
+      // Step 3 Spec: Concurrency Control
+      await conn.query(`SET TRANSACTION ISOLATION LEVEL ${isolationLevel}`);
+      await conn.beginTransaction();
+
+      const query = `
+        INSERT INTO title_basics (tconst, titleType, primaryTitle, startYear, runtimeMinutes)
+        VALUES (?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE 
+        titleType = VALUES(titleType),
+        primaryTitle = VALUES(primaryTitle),
+        startYear = VALUES(startYear),
+        runtimeMinutes = VALUES(runtimeMinutes)
+      `;
+
+      await conn.execute(query, [
+        tconst,
+        titleType,
+        primaryTitle,
+        startYear,
+        runtimeMinutes,
+      ]);
+
+      // Simulate concurrency delay if requested
+      if (sleepTime > 0) {
+        await new Promise((r) => setTimeout(r, sleepTime));
+      }
+
+      await conn.commit();
+      await conn.end();
+      results[nodeKey] = "SUCCESS";
+    } catch (err: any) {
+      console.error(
+        `Failed to write to ${nodeKey} (${config.host}):`,
+        err.message
+      );
+      results[nodeKey] = "FAILED";
+
+      // Step 4 Spec: Failure Recovery Logging
+      // If a node is down, log it to the Central Node's recovery table
+      await logForRecovery(nodeKey, body);
+    }
   }
 
-  try {
-    await executeTransaction(primaryServer, body, isolationLevel, sleepTime);
-  } catch (err: any) {
-    return NextResponse.json(
-      {
-        status: "error",
-        message: `Primary ${primaryServer} failed`,
-        details: err.message,
-      },
-      { status: 500 }
-    );
-  }
-
-  try {
-    await executeTransaction(
-      replicaServer,
-      { ...body, sleepTime: 0 },
-      "READ COMMITTED",
-      0
-    );
-  } catch (err: any) {
-    console.error(
-      `Replication to ${replicaServer} failed. Logging for recovery.`
-    );
-    await logForRecovery(replicaServer, body);
-    return NextResponse.json({
-      status: "partial_success",
-      message: "Primary ok, Replica failed (saved to log)",
-    });
-  }
+  // Response: success only if Central succeeded (Step 4 Requirement: Shield users from node failure)
+  const status =
+    results["server0"] === "SUCCESS" ? "success" : "partial_failure";
 
   return NextResponse.json({
-    status: "success",
-    primary: primaryServer,
-    replica: replicaServer,
+    status,
+    primary: fragmentNode,
+    results,
   });
 }
 
-//database transaction execution
-async function executeTransaction(
-  serverKey: keyof typeof VM_PORTS,
-  data: any,
-  isoLevel: string,
-  sleep: number
-) {
-  const port = VM_PORTS[serverKey];
-  if (!port) throw new Error(`Invalid port for ${serverKey}`);
-
-  const conn = await mysql.createConnection({ ...DB_CONFIG, port });
-
+// Helper to log missed transactions to MySQL (Step 4)
+async function logForRecovery(failedNode: string, data: any) {
   try {
-    await conn.query(`SET TRANSACTION ISOLATION LEVEL ${isoLevel}`);
-    await conn.beginTransaction();
+    // We always try to log failures to the Central Node (Server 0).
+    const centralConfig = NODES.server0;
 
-    const query = `
-      INSERT INTO title_basics (tconst, titleType, primaryTitle, startYear, runtimeMinutes)
-      VALUES (?, ?, ?, ?, ?)
-      ON DUPLICATE KEY UPDATE
-      titleType = VALUES(titleType),
-      primaryTitle = VALUES(primaryTitle),
-      startYear = VALUES(startYear),
-      runtimeMinutes = VALUES(runtimeMinutes)
-    `;
+    const conn = await mysql.createConnection({
+      host: centralConfig.host,
+      port: centralConfig.port,
+      user: centralConfig.user,
+      password: centralConfig.password,
+      database: centralConfig.database,
+    });
 
-    await conn.execute(query, [
-      data.tconst,
-      data.titleType,
-      data.primaryTitle,
-      data.startYear,
-      data.runtimeMinutes,
-    ]);
-
-    //delay
-    if (sleep > 0) {
-      console.log(`[${serverKey}] Sleeping for ${sleep}ms...`);
-      await new Promise((r) => setTimeout(r, sleep));
-    }
-
-    await conn.commit();
-  } catch (err) {
-    await conn.rollback();
-    throw err;
-  } finally {
+    // Ensure you have a 'recovery_log' table created in your DB!
+    await conn.execute(
+      `INSERT INTO recovery_log (failed_node, transaction_data, status, timestamp) 
+             VALUES (?, ?, 'PENDING', NOW())`,
+      [failedNode, JSON.stringify(data)]
+    );
     await conn.end();
-  }
-}
-
-//logging for recovery
-async function logForRecovery(failedServer: string, data: any) {
-  const logPath = path.join(process.cwd(), "recovery_log.json");
-  const entry = {
-    server: failedServer,
-    data,
-    timestamp: new Date().toISOString(),
-  };
-
-  let logs = [];
-  try {
-    const fileContent = await fs.readFile(logPath, "utf-8");
-    logs = JSON.parse(fileContent);
+    console.log(`Logged recovery data for ${failedNode}`);
   } catch (e) {
-    /*ignore error*/
+    // If Central is also down, then we have a catastrophic failure (File system fallback optional)
+    console.error("CRITICAL: Central node is down, cannot log recovery.", e);
   }
-
-  logs.push(entry);
-  await fs.writeFile(logPath, JSON.stringify(logs, null, 2));
 }
