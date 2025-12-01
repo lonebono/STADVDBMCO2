@@ -6,6 +6,8 @@ import { NODES } from "../../../lib/nodes";
 
 const FRAGMENTATION_YEAR = 1919;
 
+const CURRENT_NODE = process.env.NEXT_PUBLIC_SERVER_ID || "server0";
+
 //main post handler
 export async function POST(req: NextRequest) {
   const body = await req.json();
@@ -19,20 +21,19 @@ export async function POST(req: NextRequest) {
     sleepTime = 0,
   } = body;
 
-  // determine target node based on startYear
+  // connect to target nodes based on fragmentation
   const centralNode = "server0";
   const fragmentNode = startYear < FRAGMENTATION_YEAR ? "server1" : "server2";
   const targetNodes = [centralNode, fragmentNode];
   const results: Record<string, string> = {};
 
-  for (const nodeKey of targetNodes) {
+  // execute writes on target nodes
+  for (const targetNodeKey of targetNodes) {
     // @ts-ignore
-    const config = NODES[nodeKey];
+    const config = NODES[targetNodeKey];
 
     try {
-      console.log(
-        `Connecting to ${nodeKey} at ${config.host}:${config.port}...`
-      );
+      console.log(`[${CURRENT_NODE}] connecting to ${targetNodeKey}...`);
 
       const conn = await mysql.createConnection({
         host: config.host,
@@ -42,7 +43,6 @@ export async function POST(req: NextRequest) {
         database: config.database,
       });
 
-      // Step 3 Spec: Concurrency Control
       await conn.query(`SET TRANSACTION ISOLATION LEVEL ${isolationLevel}`);
       await conn.beginTransaction();
 
@@ -64,62 +64,61 @@ export async function POST(req: NextRequest) {
         runtimeMinutes,
       ]);
 
-      // Simulate concurrency delay if requested
-      if (sleepTime > 0) {
-        await new Promise((r) => setTimeout(r, sleepTime));
-      }
+      if (sleepTime > 0) await new Promise((r) => setTimeout(r, sleepTime));
 
       await conn.commit();
       await conn.end();
-      results[nodeKey] = "SUCCESS";
+      results[targetNodeKey] = "SUCCESS";
     } catch (err: any) {
-      console.error(
-        `Failed to write to ${nodeKey} (${config.host}):`,
-        err.message
-      );
-      results[nodeKey] = "FAILED";
+      console.error(`Write failed to ${targetNodeKey}: ${err.message}`);
+      results[targetNodeKey] = "FAILED";
 
-      // Step 4 Spec: Failure Recovery Logging
-      // If a node is down, log it to the Central Node's recovery table
-      await logForRecovery(nodeKey, body);
+      //  failure logging step
+      // if the target is not self, must log that they missed this.
+      if (targetNodeKey !== CURRENT_NODE) {
+        await logFailureLocally(targetNodeKey, body);
+      }
     }
   }
 
-  // Response: success only if Central succeeded (Step 4 Requirement: Shield users from node failure)
-  const status =
-    results["server0"] === "SUCCESS" ? "success" : "partial_failure";
+  // Shield users: Return success if at least one node accepted the data
+  const status = Object.values(results).includes("SUCCESS")
+    ? "success"
+    : "failure";
 
   return NextResponse.json({
     status,
-    primary: fragmentNode,
     results,
+    message:
+      status === "success"
+        ? "Transaction processed (potentially queued)."
+        : "System failure.",
   });
 }
 
 // Helper to log missed transactions to MySQL (Step 4)
-async function logForRecovery(failedNode: string, data: any) {
+async function logFailureLocally(failedNode: string, data: any) {
   try {
-    // We always try to log failures to the Central Node (Server 0).
-    const centralConfig = NODES.server0;
+    // @ts-ignore
+    const localConfig = NODES[CURRENT_NODE]; // Connect to Myself
 
     const conn = await mysql.createConnection({
-      host: centralConfig.host,
-      port: centralConfig.port,
-      user: centralConfig.user,
-      password: centralConfig.password,
-      database: centralConfig.database,
+      host: localConfig.host,
+      port: localConfig.port,
+      user: localConfig.user,
+      password: localConfig.password,
+      database: localConfig.database,
     });
 
-    // Ensure you have a 'recovery_log' table created in your DB!
     await conn.execute(
-      `INSERT INTO recovery_log (failed_node, transaction_data, status, timestamp) 
-             VALUES (?, ?, 'PENDING', NOW())`,
+      `INSERT INTO recovery_log (failed_node, transaction_data, status) VALUES (?, ?, 'PENDING')`,
       [failedNode, JSON.stringify(data)]
     );
     await conn.end();
-    console.log(`Logged recovery data for ${failedNode}`);
+    console.log(
+      `[Recovery] Logged missed transaction for ${failedNode} into local DB.`
+    );
   } catch (e) {
-    // If Central is also down, then we have a catastrophic failure (File system fallback optional)
-    console.error("CRITICAL: Central node is down, cannot log recovery.", e);
+    console.error("CRITICAL: Local DB is down. Cannot log failure.", e);
   }
 }
