@@ -13,7 +13,6 @@ export default function LogsPage() {
     setLogs(prev => ["Initiating Recovery Sync...", ...prev]);
 
     try {
-        // Calls the API we wrote in app/api/recover/route.ts
         const res = await fetch('/api/recover', { method: 'POST' });
         const data = await res.json();
         
