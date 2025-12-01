@@ -4,57 +4,68 @@ import mysql, { RowDataPacket } from "mysql2/promise";
 
 type Server = "server0" | "server1" | "server2";
 
-const DB_USER = process.env.DB_USER!;
-const DB_PASS = process.env.DB_PASS!;
-const DB_NAME = process.env.DB_NAME!;
-
-const VM_CONFIG: Record<Server, { host: string; port: number }> = {
-  server0: { host: process.env.DB0_HOST!, port: Number(process.env.DB0_PORT) },
-  server1: { host: process.env.DB1_HOST!, port: Number(process.env.DB1_PORT) },
-  server2: { host: process.env.DB2_HOST!, port: Number(process.env.DB2_PORT) },
+const DB_SERVERS: Record<Server, { host: string; user: string; password: string; database: string }> = {
+  server0: {
+    host: process.env.DB0_HOST!,
+    user: process.env.DB_USER!,
+    password: process.env.DB_PASS!,
+    database: process.env.DB_NAME!,
+  },
+  server1: {
+    host: process.env.DB1_HOST!,
+    user: process.env.DB_USER!,
+    password: process.env.DB_PASS!,
+    database: process.env.DB_NAME!,
+  },
+  server2: {
+    host: process.env.DB2_HOST!,
+    user: process.env.DB_USER!,
+    password: process.env.DB_PASS!,
+    database: process.env.DB_NAME!,
+  },
 };
 
-// median for fragmentation
-const MEDIAN_YEAR = 1919;
+async function fetchServerData(server: Server) {
+  const conn = await mysql.createConnection({
+    ...DB_SERVERS[server],
+    port: 3306,
+  });
+
+  // Count total rows
+  const [countRows] = await conn.execute<RowDataPacket[]>(
+    "SELECT COUNT(*) AS count FROM title_basics"
+  );
+  const rowCount = countRows[0]["count"];
+
+  // Fetch sample rows (limit 5)
+  const [sampleRows] = await conn.execute<RowDataPacket[]>(
+    "SELECT tconst, titleType, primaryTitle, startYear, runtimeMinutes FROM title_basics LIMIT 5"
+  );
+
+  await conn.end();
+
+  return { rowCount, sampleRows };
+}
 
 export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url);
-  const server = (searchParams.get("server") || "server0") as Server;
-
-  if (!(server in VM_CONFIG)) {
-    return NextResponse.json({ error: "Invalid server" }, { status: 400 });
-  }
-
   try {
-    const { host, port } = VM_CONFIG[server];
+    const serverQuery = req.nextUrl.searchParams.get("server") as Server | null;
 
-    const conn = await mysql.createConnection({
-      host,
-      port,
-      user: DB_USER,
-      password: DB_PASS,
-      database: DB_NAME,
-    });
+    if (serverQuery && !["server0", "server1", "server2"].includes(serverQuery)) {
+      return NextResponse.json({ error: "Invalid server" }, { status: 400 });
+    }
 
-    let query = "SELECT COUNT(*) AS count FROM title_basics";
-    if (server === "server1") query += ` WHERE startYear < ${MEDIAN_YEAR} OR startYear IS NULL`;
-    if (server === "server2") query += ` WHERE startYear >= ${MEDIAN_YEAR}`;
-    if (server === "server0") query += " LIMIT 20000";
+    // Fetch all servers if no specific server requested
+    const serversToFetch: Server[] = serverQuery ? [serverQuery] : ["server0", "server1", "server2"];
 
-    const [rows] = await conn.execute<RowDataPacket[]>(query);
-    const localCount = rows[0]["count"];
+    const data: Record<Server, any> = {} as any;
 
-    await conn.end();
+    for (const srv of serversToFetch) {
+      data[srv] = await fetchServerData(srv);
+    }
 
-    return NextResponse.json({
-      server,
-      rowCount: localCount,
-      online: true,
-    });
+    return NextResponse.json({ data });
   } catch (err: any) {
-    return NextResponse.json(
-      { error: "DB connection failed", details: err.message, online: false },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "DB connection failed", details: err.message }, { status: 500 });
   }
 }
