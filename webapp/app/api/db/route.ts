@@ -4,72 +4,68 @@ import mysql, { RowDataPacket } from "mysql2/promise";
 
 type Server = "server0" | "server1" | "server2";
 
-const DB_USER = process.env.DB_USER!;
-const DB_PASS = process.env.DB_PASS!;
-const DB_NAME = process.env.DB_NAME!;
-const DB_HOST = process.env.DB_HOST!;
-
-// Ports here are mostly for informational purposes
-const VM_PORTS: Record<Server, number> = {
-  server0: Number(process.env.SERVER0_PORT),
-  server1: Number(process.env.SERVER1_PORT),
-  server2: Number(process.env.SERVER2_PORT),
+const DB_SERVERS: Record<Server, { host: string; user: string; password: string; database: string }> = {
+  server0: {
+    host: process.env.DB0_HOST!,
+    user: process.env.DB_USER!,
+    password: process.env.DB_PASS!,
+    database: process.env.DB_NAME!,
+  },
+  server1: {
+    host: process.env.DB1_HOST!,
+    user: process.env.DB_USER!,
+    password: process.env.DB_PASS!,
+    database: process.env.DB_NAME!,
+  },
+  server2: {
+    host: process.env.DB2_HOST!,
+    user: process.env.DB_USER!,
+    password: process.env.DB_PASS!,
+    database: process.env.DB_NAME!,
+  },
 };
 
-// URL for central node API (adjust external IP/port if needed)
-const CENTRAL_NODE_URL =
-  "http://ccscloud.dlsu.edu.ph:60205/api/db?server=server0";
+async function fetchServerData(server: Server) {
+  const conn = await mysql.createConnection({
+    ...DB_SERVERS[server],
+    port: 3306,
+  });
+
+  // Count total rows
+  const [countRows] = await conn.execute<RowDataPacket[]>(
+    "SELECT COUNT(*) AS count FROM title_basics"
+  );
+  const rowCount = countRows[0]["count"];
+
+  // Fetch sample rows (limit 5)
+  const [sampleRows] = await conn.execute<RowDataPacket[]>(
+    "SELECT tconst, titleType, primaryTitle, startYear, runtimeMinutes FROM title_basics LIMIT 5"
+  );
+
+  await conn.end();
+
+  return { rowCount, sampleRows };
+}
 
 export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url);
-  const server = (searchParams.get("server") || "server0") as Server;
-
-  if (!(server in VM_PORTS)) {
-    return NextResponse.json({ error: "Invalid server" }, { status: 400 });
-  }
-
   try {
-    // Connect to LOCAL MySQL on this VM
-    const conn = await mysql.createConnection({
-      host: DB_HOST,
-      user: DB_USER,
-      password: DB_PASS,
-      database: DB_NAME,
-      port: 3306,
-    });
+    const serverQuery = req.nextUrl.searchParams.get("server") as Server | null;
 
-    const [rows] = await conn.execute<RowDataPacket[]>(
-      "SELECT COUNT(*) AS count FROM title_basics"
-    );
-    const localCount = rows[0]["count"];
-
-    await conn.end();
-
-    // Fetch central node count only if we're NOT the central node
-    let centralCount = localCount;
-    if (server !== "server0") {
-      try {
-        const res = await fetch(CENTRAL_NODE_URL);
-        const data = await res.json();
-        if (data.rowCount) centralCount = data.rowCount;
-      } catch (err) {
-        console.warn("Failed to fetch central node count:", err);
-      }
+    if (serverQuery && !["server0", "server1", "server2"].includes(serverQuery)) {
+      return NextResponse.json({ error: "Invalid server" }, { status: 400 });
     }
 
-    const partitionPercent = Math.round((localCount / centralCount) * 100);
+    // Fetch all servers if no specific server requested
+    const serversToFetch: Server[] = serverQuery ? [serverQuery] : ["server0", "server1", "server2"];
 
-    return NextResponse.json({
-      server,
-      rowCount: localCount,
-      online: true,
-      partitionPercent,
-      centralCount,
-    });
+    const data: Record<Server, any> = {} as any;
+
+    for (const srv of serversToFetch) {
+      data[srv] = await fetchServerData(srv);
+    }
+
+    return NextResponse.json({ data });
   } catch (err: any) {
-    return NextResponse.json(
-      { error: "DB connection failed", details: err.message, online: false },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "DB connection failed", details: err.message }, { status: 500 });
   }
 }
