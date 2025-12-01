@@ -2,39 +2,44 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import mysql, { RowDataPacket } from "mysql2/promise";
-
-const VM_PORTS = {
-  server0: Number(process.env.SERVER0_PORT), //node 1
-  server1: Number(process.env.SERVER1_PORT), //node 2
-  server2: Number(process.env.SERVER2_PORT), //node 3
-};
-
-const DB_CONFIG = {
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASS,
-  database: process.env.DB_NAME,
-};
+import { NODES } from "@/lib/nodes";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
 
   const tconst = searchParams.get("tconst") || "tt0000001";
-  const targetNode = searchParams.get("targetNode") || "central";
+  const targetNodeParam = searchParams.get("targetNode") || "central";
   const isolationLevel = searchParams.get("isolationLevel") || "READ COMMITTED";
 
-  let port = VM_PORTS["server0"];
-  if (targetNode === "server1") port = VM_PORTS["server1"];
-  if (targetNode === "server2") port = VM_PORTS["server2"];
+  // Map the frontend param (central/server1/server2) to our NODES config keys
+  let nodeKey: keyof typeof NODES = "server0"; // Default to central
 
-  if (!port) {
-    return NextResponse.json({ error: "Invalid target node" }, { status: 400 });
+  if (targetNodeParam === "central") nodeKey = "server0";
+  else if (targetNodeParam === "server1") nodeKey = "server1";
+  else if (targetNodeParam === "server2") nodeKey = "server2";
+
+  // @ts-ignore
+  const config = NODES[nodeKey];
+
+  if (!config) {
+    return NextResponse.json(
+      { error: `Invalid target node: ${targetNodeParam}` },
+      { status: 400 }
+    );
   }
 
   let conn;
   try {
-    conn = await mysql.createConnection({ ...DB_CONFIG, port });
+    // Connect to the specific node (Internal IP)
+    conn = await mysql.createConnection({
+      host: config.host,
+      port: config.port,
+      user: config.user,
+      password: config.password,
+      database: config.database,
+    });
 
+    // Step 3 Spec: Concurrency Control (Isolation Level)
     await conn.query(`SET TRANSACTION ISOLATION LEVEL ${isolationLevel}`);
     await conn.beginTransaction();
 
@@ -47,7 +52,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       status: "success",
-      node: targetNode,
+      node: nodeKey,
       data: rows[0] || null,
       isolationLevel,
     });
