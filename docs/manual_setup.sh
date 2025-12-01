@@ -24,13 +24,6 @@ apt install -y git
 
 # did not use below yet
 
-# install curl
-apt install -y curl
-
-# install Node.js LTS
-curl -fsSL https://deb.nodesource.com/setup_lts.x | bash -
-apt install -y nodejs
-
 # install pm2 (process manager)
 npm install -g pm2
 
