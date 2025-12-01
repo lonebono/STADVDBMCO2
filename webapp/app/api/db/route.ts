@@ -8,6 +8,7 @@ const DB_USER = process.env.DB_USER!;
 const DB_PASS = process.env.DB_PASS!;
 const DB_NAME = process.env.DB_NAME!;
 const DB_HOST = process.env.DB_HOST!;
+const server: Server = process.env.SERVER_ID as Server;
 
 const VM_PORTS: Record<Server, number> = {
   server0: Number(process.env.SERVER0_PORT),
