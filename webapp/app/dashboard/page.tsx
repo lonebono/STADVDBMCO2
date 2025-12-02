@@ -69,7 +69,7 @@ export default function DashboardPage() {
 
   return (
     <div className="flex flex-col gap-6 p-8 h-full bg-gray-900 text-white overflow-y-auto">
-      {/* Header Section */}
+      {/* header*/}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-gray-800 pb-6">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">System Status</h1>
@@ -80,7 +80,7 @@ export default function DashboardPage() {
         <RecoverButton />
       </div>
 
-      {/* Node Cards */}
+      {/* server cards */}
       <div className="flex flex-wrap gap-4">
         {(Object.keys(nodes) as Server[]).map((s) => {
           const node = nodes[s];
@@ -89,7 +89,7 @@ export default function DashboardPage() {
               ? Math.round(((node.rowCount ?? 0) / totalRows) * 100)
               : 0;
 
-          // Card Styles based on Status
+          // online/offline styles
           const statusColors = node.online
             ? "bg-gray-800 border-gray-700 hover:border-gray-500"
             : "bg-red-950/30 border-red-800 hover:border-red-600";
@@ -103,7 +103,7 @@ export default function DashboardPage() {
               <div
                 className={`p-6 rounded-xl border shadow-xl flex flex-col gap-4 h-full transition-colors ${statusColors}`}
               >
-                {/* Hover Arrow Indicator */}
+                {/* hover arrow indicator */}
                 <div className="absolute top-4 right-4 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity font-mono">
                   ↗
                 </div>
@@ -143,7 +143,7 @@ export default function DashboardPage() {
                   </p>
                 </div>
 
-                {/* Partition Visual */}
+                {/* partition */}
                 <div className="pt-2 mt-auto">
                   <div className="flex justify-between text-xs text-gray-500 mb-1">
                     <span>Usage</span>
@@ -164,7 +164,7 @@ export default function DashboardPage() {
         })}
       </div>
 
-      {/* Footer Info */}
+      {/* footer */}
       <div className="mt-auto pt-6 flex justify-between items-center text-xs text-gray-500 border-t border-gray-800">
         <p>Fragmentation Year: 1919 (Server 1 &lt; 1919, Server 2 ≥ 1919)</p>
         <div className="flex items-center gap-2">
