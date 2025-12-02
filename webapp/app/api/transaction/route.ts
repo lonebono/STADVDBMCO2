@@ -1,11 +1,64 @@
 // webapp/app/api/transaction/route.ts
 
 import { NextRequest, NextResponse } from "next/server";
-import mysql from "mysql2/promise";
+import mysql, { RowDataPacket } from "mysql2/promise";
 import { NODES } from "@/lib/nodes";
 
 const FRAGMENTATION_YEAR = 1919;
 const CURRENT_NODE = process.env.NEXT_PUBLIC_SERVER_ID || "server0";
+
+// Handle GET transaction
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+
+  const tconst = searchParams.get("tconst") || "tt0000001";
+  const targetNodeParam = searchParams.get("targetNode") || "central";
+  const isolationLevel = searchParams.get("isolationLevel") || "READ COMMITTED";
+
+  let nodeKey: keyof typeof NODES = "server0";
+  if (targetNodeParam === "server1") nodeKey = "server1";
+  else if (targetNodeParam === "server2") nodeKey = "server2";
+
+  // @ts-ignore
+  const config = NODES[nodeKey];
+
+  if (!config) {
+    return NextResponse.json({ error: `Invalid target node` }, { status: 400 });
+  }
+
+  let conn;
+  try {
+    conn = await mysql.createConnection({
+      host: config.host,
+      port: config.port,
+      user: config.user,
+      password: config.password,
+      database: config.database,
+    });
+
+    await conn.query(`SET TRANSACTION ISOLATION LEVEL ${isolationLevel}`);
+    await conn.beginTransaction();
+
+    const [rows] = await conn.execute<RowDataPacket[]>(
+      "SELECT tconst, primaryTitle, startYear, runtimeMinutes FROM title_basics WHERE tconst = ?",
+      [tconst]
+    );
+
+    await conn.commit();
+
+    return NextResponse.json({
+      status: "success",
+      node: nodeKey,
+      data: rows[0] || null,
+      isolationLevel,
+    });
+  } catch (err: any) {
+    if (conn) await conn.rollback();
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  } finally {
+    if (conn) await conn.end();
+  }
+}
 
 // Handle INSERT/UPDATE transaction
 export async function POST(req: NextRequest) {

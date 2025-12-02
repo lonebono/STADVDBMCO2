@@ -6,11 +6,13 @@ import Button from "@/components/Button";
 const FRAGMENTATION_YEAR = 1919;
 
 export default function TransactionsPage() {
-  const [actionType, setActionType] = useState<"INSERT" | "DELETE" | "READ">("INSERT"); //add read
+  const [actionType, setActionType] = useState<"INSERT" | "DELETE" | "READ">(
+    "INSERT"
+  ); //add read
   const [isolation, setIsolation] = useState("READ COMMITTED");
   const [sleepTime, setSleepTime] = useState(0);
 
-  // form Data
+  // form data
   const [tconst, setTconst] = useState("tt9999999");
   const [titleType, setTitleType] = useState("movie");
   const [title, setTitle] = useState("Test Movie");
@@ -43,44 +45,44 @@ export default function TransactionsPage() {
   const handleSubmit = async () => {
     setLoading(true);
     addLog(`   Action: ${actionType}`);
-    
+
     try {
       let res;
-      
-      //case 1 read transaction
+
+      // READ
       if (actionType === "READ") {
-        addLog(`   Sending READ Request (Checking for Dirty Reads)...`);
+        addLog(`   Sending READ Request...`);
         const params = new URLSearchParams({
-            tconst,
-            isolationLevel: isolation,
-            targetNode: 'central' //default to checking central, or you can add logic to check fragments
+          tconst,
+          isolationLevel: isolation,
+          targetNode: "central",
         });
-        res = await fetch(`/api/transaction/read?${params}`, { method: 'GET' });
-      } 
-      
-      else {
+
+        res = await fetch(`/api/transaction?${params}`, { method: "GET" });
+      } else {
+        // WRITE/DELETE
         const method = actionType === "DELETE" ? "DELETE" : "POST";
         addLog(`   Sending ${method} Request...`);
         addLog(`   Target: ${targetNode}`);
         addLog(`   Isolation: ${isolation}, Delay: ${sleepTime}ms`);
 
         const payload: any = {
-            tconst,
-            isolationLevel: isolation,
-            sleepTime: Number(sleepTime),
+          tconst,
+          isolationLevel: isolation,
+          sleepTime: Number(sleepTime),
         };
 
         if (actionType === "INSERT") {
-            payload.titleType = titleType;
-            payload.primaryTitle = title;
-            payload.startYear = Number(year);
-            payload.runtimeMinutes = Number(runtime);
+          payload.titleType = titleType;
+          payload.primaryTitle = title;
+          payload.startYear = Number(year);
+          payload.runtimeMinutes = Number(runtime);
         }
 
         res = await fetch("/api/transaction", {
-            method: method,
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
+          method: method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
         });
       }
 
@@ -89,14 +91,13 @@ export default function TransactionsPage() {
       if (data.status === "success") {
         addLog(`SUCCESS: Operation completed.`);
         if (data.data) {
-            addLog(`   READ RESULT: ${JSON.stringify(data.data)}`);
+          addLog(`   READ RESULT: ${JSON.stringify(data.data, null, 2)}`);
         }
       } else if (data.status === "partial_failure") {
         addLog(`PARTIAL SUCCESS: One node failed. Queued for recovery.`);
       } else {
-        addLog(`FAILURE: ${data.message || "Unknown error"}`);
+        addLog(`FAILURE: ${data.message || data.error || "Unknown error"}`);
       }
-
     } catch (err: any) {
       addLog(`NETWORK ERROR: ${err.message}`);
     } finally {
@@ -167,7 +168,11 @@ export default function TransactionsPage() {
               </select>
             </div>
 
-            <div className={actionType === 'READ' ? "opacity-50 pointer-events-none" : ""}>
+            <div
+              className={
+                actionType === "READ" ? "opacity-50 pointer-events-none" : ""
+              }
+            >
               <label className="block text-xs text-gray-500 mb-1">
                 Simulated Delay (ms)
               </label>
@@ -176,7 +181,7 @@ export default function TransactionsPage() {
                 className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm focus:border-blue-500 outline-none"
                 value={sleepTime}
                 onChange={(e) => setSleepTime(Number(e.target.value))}
-                placeholder={actionType === 'READ' ? "N/A" : "0"}
+                placeholder={actionType === "READ" ? "N/A" : "0"}
               />
             </div>
           </div>
@@ -188,10 +193,12 @@ export default function TransactionsPage() {
             <h2 className="text-gray-400 text-xs font-bold uppercase tracking-widest">
               Data Payload
             </h2>
-            {actionType !== 'READ' && (
-                <span className={`text-[10px] font-mono border px-2 py-1 rounded ${targetColor}`}>
+            {actionType !== "READ" && (
+              <span
+                className={`text-[10px] font-mono border px-2 py-1 rounded ${targetColor}`}
+              >
                 {targetNode}
-                </span>
+              </span>
             )}
           </div>
 
