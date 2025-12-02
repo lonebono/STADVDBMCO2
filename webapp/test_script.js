@@ -1,22 +1,20 @@
-// webapp/test_script.js
-
-// STADVDB MCO2 - COMPLETE TEST SCRIPT
-// - runs three iterations
-// - iterates sequentially
-// - creates three log files
-// - use node test-suite.js to run
+// STADVDB MCO2 TEST SCRIPT
+// run node test-suite.js in webapp folder
+// does three cases per iso level, makes 4 log files per iso level
+// does one case for failure recovery, makes 1 log file
 
 const fs = require("fs");
 const readline = require("readline");
 
-// 1. CONFIGURATION (Public Cloud URLs)
+// 1. Config
+
 const NODES = {
-  server0: "http://ccscloud.dlsu.edu.ph:60205", // Central Node
-  server1: "http://ccscloud.dlsu.edu.ph:60206", // Node 2 (< 1919)
-  server2: "http://ccscloud.dlsu.edu.ph:60207", // Node 3 (>= 1919)
+  server0: "http://ccscloud.dlsu.edu.ph:60205", // Central
+  server1: "http://ccscloud.dlsu.edu.ph:60206", // < 1919
+  server2: "http://ccscloud.dlsu.edu.ph:60207", // >= 1919
 };
 
-// 2. HELPERS
+// 2. Helpers
 const rl = readline.createInterface({
   input: process.stdin,
   output: process.stdout,
@@ -25,26 +23,26 @@ const rl = readline.createInterface({
 const askUser = (query) =>
   new Promise((resolve) => rl.question(query, resolve));
 
-function logToFile(iter, text) {
-  const filename = `technical_report_iter_${iter}.txt`;
-  fs.appendFileSync(filename, text + "\n");
+function getConcurrencyFileName(isoLevel) {
+  return `technical_report_concurrency_${isoLevel
+    .toLowerCase()
+    .replace(/ /g, "_")}.txt`;
 }
 
-function log(iter, message) {
+function log(filename, message) {
   console.log(message);
-  logToFile(iter, message);
+  fs.appendFileSync(filename, message + "\n");
 }
 
-function logResult(iter, step, caseName, data) {
+function logResult(filename, iter, caseName, result) {
   const timestamp = new Date().toISOString();
   const entry = `
-[${timestamp}] [${step}] [${caseName}]
-STATUS: ${JSON.stringify(data, null, 2)}
+[${timestamp}] [Iter ${iter}] [${caseName}]
+STATUS: ${JSON.stringify(result, null, 2)}
 --------------------------------------------------`;
-  log(iter, entry);
+  log(filename, entry);
 }
 
-// HTTP Helpers
 async function sendRequest(url, method, body = null) {
   try {
     const options = {
@@ -53,7 +51,6 @@ async function sendRequest(url, method, body = null) {
     };
     if (body) options.body = JSON.stringify(body);
 
-    // timeout after 5 seconds
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
 
@@ -65,231 +62,220 @@ async function sendRequest(url, method, body = null) {
   }
 }
 
-// 3. TEST LOGIC
-
-async function runIteration(iter) {
-  const filename = `technical_report_iter_${iter}.txt`;
+// 3. Concurrency
+async function testConcurrency(isoLevel) {
+  const filename = getConcurrencyFileName(isoLevel);
   fs.writeFileSync(
     filename,
-    `MCO2 LOGS - ITERATION ${iter}\nDate: ${new Date().toISOString()}\n================================\n`
+    `CONCURRENCY LOGS - ${isoLevel}\nDate: ${new Date().toISOString()}\n================================\n`
   );
 
-  console.log(`\n\n=== STARTING ITERATION ${iter} ===`);
-  console.log(`Logs will be saved to: ${filename}`);
+  console.log(`\n>>> STARTING BATCH: ${isoLevel} <<<`);
+  console.log(`Logs -> ${filename}`);
 
-  // STEP 3: CONCURRENCY CONTROL
-  log(iter, "\n--- CONCURRENCY CONTROL ---");
+  // run 3 Iterations per Isolation Level
+  for (let i = 1; i <= 3; i++) {
+    log(filename, `\n--- ITERATION ${i} ---`);
 
-  // Case 1: Concurrent Reads
-  log(iter, "Running Case #1: Concurrent Reads (Server1 & Server2)...");
-  const tconstRead = "tt0021000";
-  const p1 = sendRequest(
-    `${NODES.server1}/api/transaction/read?tconst=${tconstRead}&targetNode=central`,
-    "GET"
-  );
-  const p2 = sendRequest(
-    `${NODES.server2}/api/transaction/read?tconst=${tconstRead}&targetNode=central`,
-    "GET"
-  );
-  const [res1, res2] = await Promise.all([p1, p2]);
+    // Case 1: Concurrent Reads
+    const tconstRead = "tt0021000";
+    const p1 = sendRequest(
+      `${NODES.server1}/api/transaction/read?tconst=${tconstRead}&targetNode=central&isolationLevel=${isoLevel}`,
+      "GET"
+    );
+    const p2 = sendRequest(
+      `${NODES.server2}/api/transaction/read?tconst=${tconstRead}&targetNode=central&isolationLevel=${isoLevel}`,
+      "GET"
+    );
+    const [res1, res2] = await Promise.all([p1, p2]);
 
-  logResult(iter, "Step 3", "Case 1: Concurrent Reads", {
-    server1_read_status: res1.status || "Failed",
-    server2_read_status: res2.status || "Failed",
-    data_match: JSON.stringify(res1.data) === JSON.stringify(res2.data),
-  });
+    logResult(filename, i, "Case 1: Concurrent Reads", {
+      node2: res1.status || "Failed",
+      node3: res2.status || "Failed",
+      consistent: JSON.stringify(res1.data) === JSON.stringify(res2.data),
+    });
 
-  // Case 2: Read-Write Conflict
-  log(iter, "Running Case #2: Read-Write Conflict...");
-  const tconstRW = `tt_rw_${iter}`;
-  // slow write on server0
-  const writePayload = {
-    tconst: tconstRW,
-    titleType: "test",
-    primaryTitle: `Locked ${iter}`,
-    startYear: 2025,
-    runtimeMinutes: 10,
-    isolationLevel: "READ COMMITTED",
-    sleepTime: 2000,
-  };
-  const writePromise = sendRequest(
-    `${NODES.server0}/api/transaction`,
-    "POST",
-    writePayload
-  );
+    // Case 2: Read-Write Conflict
+    const tconstRW = `tt_rw_${isoLevel.substring(0, 3)}_${i}`;
+    const writePayload = {
+      tconst: tconstRW,
+      titleType: "test",
+      primaryTitle: `Locked ${i} (${isoLevel})`,
+      startYear: 2025,
+      runtimeMinutes: 10,
+      isolationLevel: isoLevel,
+      sleepTime: 2000,
+    };
+    const writePromise = sendRequest(
+      `${NODES.server0}/api/transaction`,
+      "POST",
+      writePayload
+    );
 
-  // quick read from server1
-  await new Promise((r) => setTimeout(r, 500));
-  const readRes = await sendRequest(
-    `${NODES.server1}/api/transaction/read?tconst=${tconstRW}&targetNode=central`,
-    "GET"
-  );
-  const writeRes = await writePromise;
+    await new Promise((r) => setTimeout(r, 500));
+    const readRes = await sendRequest(
+      `${NODES.server1}/api/transaction/read?tconst=${tconstRW}&targetNode=central`,
+      "GET"
+    );
+    const writeRes = await writePromise;
 
-  logResult(iter, "Step 3", "Case 2: Read-Write Conflict", {
-    write_status: writeRes.status,
-    read_outcome: readRes.data ? "Saw Data (Dirty/Old)" : "Blocked/Empty",
-  });
+    logResult(filename, i, "Case 2: Read-Write Conflict", {
+      write_status: writeRes.status,
+      read_outcome: readRes.data ? "Saw Data (Dirty/Old)" : "Blocked/Empty",
+    });
 
-  // Case 3: Write-Write Conflict
-  log(iter, "Running Case #3: Write-Write Conflict...");
-  const tconstWW = `tt_ww_${iter}`;
-  const payA = {
-    tconst: tconstWW,
-    titleType: "test",
-    primaryTitle: "Server1 Win",
-    startYear: 2025,
-    runtimeMinutes: 10,
-    isolationLevel: "SERIALIZABLE",
-  };
-  const payB = {
-    tconst: tconstWW,
-    titleType: "test",
-    primaryTitle: "Server2 Win",
-    startYear: 2025,
-    runtimeMinutes: 10,
-    isolationLevel: "SERIALIZABLE",
-  };
+    // Case 3: Write-Write Conflict
+    const tconstWW = `tt_ww_${isoLevel.substring(0, 3)}_${i}`;
+    const payA = {
+      tconst: tconstWW,
+      titleType: "test",
+      primaryTitle: "Server 0 Win",
+      startYear: 2025,
+      runtimeMinutes: 10,
+      isolationLevel: isoLevel,
+      sleepTime: 0,
+    };
+    const payB = {
+      tconst: tconstWW,
+      titleType: "test",
+      primaryTitle: "Server 1 Win",
+      startYear: 2025,
+      runtimeMinutes: 10,
+      isolationLevel: isoLevel,
+      sleepTime: 0,
+    };
 
-  const reqA = sendRequest(`${NODES.server1}/api/transaction`, "POST", payA);
-  const reqB = sendRequest(`${NODES.server2}/api/transaction`, "POST", payB);
-  const [rA, rB] = await Promise.all([reqA, reqB]);
+    const reqA = sendRequest(`${NODES.server1}/api/transaction`, "POST", payA);
+    const reqB = sendRequest(`${NODES.server2}/api/transaction`, "POST", payB);
+    const [rA, rB] = await Promise.all([reqA, reqB]);
 
-  const finalRead = await sendRequest(
-    `${NODES.server0}/api/transaction/read?tconst=${tconstWW}`,
-    "GET"
-  );
+    const finalRead = await sendRequest(
+      `${NODES.server0}/api/transaction/read?tconst=${tconstWW}`,
+      "GET"
+    );
 
-  logResult(iter, "Step 3", "Case 3: Write-Write Conflict", {
-    server1_write_status: rA.status,
-    server2_write_status: rB.status,
-    final_winner_in_db: finalRead.data?.primaryTitle,
-  });
+    logResult(filename, i, "Case 3: Write-Write Conflict", {
+      node1: rA.status,
+      node2: rB.status,
+      winner: finalRead.data?.primaryTitle,
+    });
 
-  // STEP 4: FAILURE RECOVERY
-  log(iter, "\n--- STEP 4: GLOBAL FAILURE RECOVERY ---");
+    await new Promise((r) => setTimeout(r, 1000)); // Cool down between iters
+  }
+}
 
-  // Scenario 1: Server0 Fails
-  //  Case 1 & Case 2
+// 4. Failure & Recovery
+async function testFailRecov(iter) {
+  const filename = "technical_report_failure.txt";
+
+  // Only initialize file on first iteration
+  if (iter === 1) {
+    fs.writeFileSync(
+      filename,
+      `FAILURE RECOVERY LOGS\nDate: ${new Date().toISOString()}\n================================\n`
+    );
+  }
+
+  console.log(`\n>>> STARTING FAILURE RECOVERY ITERATION ${iter} <<<`);
+  log(filename, `\n--- ITERATION ${iter} ---`);
+
+  // SCENARIO 1: Central Fails (Cases 1 & 2)
   console.log("\n[ACTION REQUIRED]");
   await askUser(
-    ">>> Please STOP MySQL on SERVER 0. Press [Enter] when done..."
+    ">>> Please STOP MySQL on SERVER 0 (Central). Press [Enter] when done..."
   );
 
-  log(iter, "Running Case #1: Server1 -> Server0 (Write Failure)...");
+  log(filename, "Running Case #1: Node 2 -> Central (Write Failure)...");
   const payloadCase1 = {
-    tconst: `tt_case1_${iter}`,
+    tconst: `tt_fail_c1_${iter}`,
     titleType: "test",
-    primaryTitle: "Log Local Server1",
-    startYear: 1910, // < 1919 should be at server1
+    primaryTitle: "Log Local Node 2",
+    startYear: 1910,
     runtimeMinutes: 5,
-    targetNode: "server1", // started at server1
+    targetNode: "server1",
   };
-  // send to server1. tries to write to server0. server0 is down.
   const resCase1 = await sendRequest(
     `${NODES.server1}/api/transaction`,
     "POST",
     payloadCase1
   );
-
-  logResult(iter, "Step 4", "Case 1: Write Failure", {
-    initiator: "Server1",
-    target_down: "Server0",
-    response_status: resCase1.status, // should be partial_failure or success
-    message: resCase1.message,
-  });
+  logResult(filename, iter, "Case 1: Write Failure", resCase1);
 
   console.log("\n[ACTION REQUIRED]");
   await askUser(
-    ">>> Please START MySQL on SERVER 0. Press [Enter] when done..."
+    ">>> Please START MySQL on SERVER 0 (Central). Press [Enter] when done..."
   );
 
-  log(iter, "Running Case #2: Server0 Recovery...");
-  // trigger recovery on server1 as log is stored there
+  log(filename, "Running Case #2: Central Recovery...");
   const resCase2 = await sendRequest(
     `${NODES.server1}/api/recover`,
     "POST",
     {}
   );
+  logResult(filename, iter, "Case 2: Recovery Process", resCase2);
 
-  logResult(iter, "Step 4", "Case 2: Recovery Process", {
-    recovering_node: "Server0",
-    source_of_logs: "Server1",
-    recovered_count: resCase2.recovered,
-    message: resCase2.message,
-  });
-
-  // Scenario 2: Server1 Fails
-  // Covers Case 3 & Case 4
+  // SCENARIO 2: Node 2 Fails (Cases 3 & 4)
   console.log("\n[ACTION REQUIRED]");
   await askUser(
-    ">>> Please STOP MySQL on SERVER 1. Press [Enter] when done..."
+    ">>> Please STOP MySQL on SERVER 1 (Node 2). Press [Enter] when done..."
   );
 
-  log(iter, "Running Case #3: Server0 -> Server1 (Write Failure)...");
+  log(filename, "Running Case #3: Central -> Node 2 (Write Failure)...");
   const payloadCase3 = {
-    tconst: `tt_case3_${iter}`,
+    tconst: `tt_fail_c3_${iter}`,
     titleType: "test",
-    primaryTitle: "Log Local Server0",
-    startYear: 1910, // < 1919 shold be at server1
+    primaryTitle: "Log Local Central",
+    startYear: 1910,
     runtimeMinutes: 5,
-    targetNode: "central", // started at Server0
+    targetNode: "central",
   };
-  // send to server0. tries to write to server1. server1 is down.
   const resCase3 = await sendRequest(
     `${NODES.server0}/api/transaction`,
     "POST",
     payloadCase3
   );
-
-  logResult(iter, "Step 4", "Case 3: Write Failure", {
-    initiator: "Server0",
-    target_down: "Server1",
-    response_status: resCase3.status,
-    message: resCase3.message,
-  });
+  logResult(filename, iter, "Case 3: Write Failure", resCase3);
 
   console.log("\n[ACTION REQUIRED]");
   await askUser(
-    ">>> Please START MySQL on SERVER 1. Press [Enter] when done..."
+    ">>> Please START MySQL on SERVER 1 (Node 2). Press [Enter] when done..."
   );
 
-  log(iter, "Running Case #4: Server1 Recovery...");
-  // trigger recovery on server0 as log is stored there
+  log(filename, "Running Case #4: Node 2 Recovery...");
   const resCase4 = await sendRequest(
     `${NODES.server0}/api/recover`,
     "POST",
     {}
   );
-
-  logResult(iter, "Step 4", "Case 4: Recovery Process", {
-    recovering_node: "Server1",
-    source_of_logs: "Server0",
-    recovered_count: resCase4.recovered,
-    message: resCase4.message,
-  });
-
-  console.log(`\n[SUCCESS] ITERATION ${iter} COMPLETE`);
+  logResult(filename, iter, "Case 4: Recovery Process", resCase4);
 }
 
-// 4. MAIN RUN
+// 5. MAIN RUNNER
 async function main() {
-  console.log("STADVDB MCO2 Test Script");
-  console.log("Run 3 Full Iterations (Step 3 & 4)");
+  console.log("MCO2 TEST SCRIPT");
+  console.log("This will generate 5 log files in total.");
 
-  for (let i = 1; i <= 3; i++) {
-    await runIteration(i);
-    if (i < 3) {
-      console.log("...Cooling down (2s)...");
-      await new Promise((r) => setTimeout(r, 2000));
-    }
+  // Run Step 3 for all 4 Isolation Levels
+  const isoLevels = [
+    "READ UNCOMMITTED",
+    "READ COMMITTED",
+    "REPEATABLE READ",
+    "SERIALIZABLE",
+  ];
+
+  for (const level of isoLevels) {
+    await testConcurrency(level);
   }
 
-  console.log("\n=== ALL TESTS FINISHED ===");
-  console.log("Files generated:");
-  console.log("- technical_report_iter_1.txt");
-  console.log("- technical_report_iter_2.txt");
-  console.log("- technical_report_iter_3.txt");
+  for (let i = 1; i <= 3; i++) {
+    await testFailRecov(i);
+  }
+
+  console.log("\n🎉 ALL TESTS COMPLETED 🎉");
+  console.log("Files Generated:");
+  isoLevels.forEach((l) => console.log(`- ${getConcurrencyFileName(l)}`));
+  console.log(`- technical_report_failure.txt`);
+
   rl.close();
 }
 
