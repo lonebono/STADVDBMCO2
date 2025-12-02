@@ -1,5 +1,3 @@
-// webapp/app/transactions/page.tsx
-
 "use client";
 
 import { useState } from "react";
@@ -8,7 +6,7 @@ import Button from "@/components/Button";
 const FRAGMENTATION_YEAR = 1919;
 
 export default function TransactionsPage() {
-  const [actionType, setActionType] = useState<"INSERT" | "DELETE">("INSERT");
+  const [actionType, setActionType] = useState<"INSERT" | "DELETE" | "READ">("INSERT"); //add read
   const [isolation, setIsolation] = useState("READ COMMITTED");
   const [sleepTime, setSleepTime] = useState(0);
 
@@ -44,45 +42,61 @@ export default function TransactionsPage() {
 
   const handleSubmit = async () => {
     setLoading(true);
-    const method = actionType === "DELETE" ? "DELETE" : "POST";
-
-    addLog(`   Sending ${method} Request...`);
-    addLog(`   Target: ${targetNode}`);
-    addLog(`   Isolation: ${isolation}, Delay: ${sleepTime}ms`);
-
+    addLog(`   Action: ${actionType}`);
+    
     try {
-      const payload: any = {
-        tconst,
-        isolationLevel: isolation,
-        sleepTime: Number(sleepTime),
-      };
+      let res;
+      
+      //case 1 read transaction
+      if (actionType === "READ") {
+        addLog(`   Sending READ Request (Checking for Dirty Reads)...`);
+        const params = new URLSearchParams({
+            tconst,
+            isolationLevel: isolation,
+            targetNode: 'central' //default to checking central, or you can add logic to check fragments
+        });
+        res = await fetch(`/api/transaction/read?${params}`, { method: 'GET' });
+      } 
+      
+      else {
+        const method = actionType === "DELETE" ? "DELETE" : "POST";
+        addLog(`   Sending ${method} Request...`);
+        addLog(`   Target: ${targetNode}`);
+        addLog(`   Isolation: ${isolation}, Delay: ${sleepTime}ms`);
 
-      if (actionType === "INSERT") {
-        payload.titleType = titleType;
-        payload.primaryTitle = title;
-        payload.startYear = Number(year);
-        payload.runtimeMinutes = Number(runtime);
+        const payload: any = {
+            tconst,
+            isolationLevel: isolation,
+            sleepTime: Number(sleepTime),
+        };
+
+        if (actionType === "INSERT") {
+            payload.titleType = titleType;
+            payload.primaryTitle = title;
+            payload.startYear = Number(year);
+            payload.runtimeMinutes = Number(runtime);
+        }
+
+        res = await fetch("/api/transaction", {
+            method: method,
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+        });
       }
-
-      const res = await fetch("/api/transaction", {
-        method: method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
 
       const data = await res.json();
 
       if (data.status === "success") {
-        addLog(`SUCCESS: ${actionType} committed.`);
+        addLog(`SUCCESS: Operation completed.`);
+        if (data.data) {
+            addLog(`   READ RESULT: ${JSON.stringify(data.data)}`);
+        }
       } else if (data.status === "partial_failure") {
         addLog(`PARTIAL SUCCESS: One node failed. Queued for recovery.`);
       } else {
         addLog(`FAILURE: ${data.message || "Unknown error"}`);
       }
 
-      if (data.results) {
-        addLog(`   Details: ${JSON.stringify(data.results)}`);
-      }
     } catch (err: any) {
       addLog(`NETWORK ERROR: ${err.message}`);
     } finally {
@@ -96,21 +110,31 @@ export default function TransactionsPage() {
       <div className="w-full md:w-1/2 p-6 overflow-y-auto border-r border-gray-800">
         <h1 className="text-2xl font-bold mb-6">Transaction Simulator</h1>
 
-        {/* action switcher */}
+        {/* Action Switcher */}
         <div className="flex gap-2 mb-6">
           <button
             onClick={() => setActionType("INSERT")}
-            className={`flex-1 py-3 rounded font-bold text-sm border transition-all ${
+            className={`flex-1 py-3 rounded font-bold text-[10px] sm:text-xs md:text-sm border transition-all ${
               actionType === "INSERT"
                 ? "bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-900/50"
                 : "bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-700"
             }`}
           >
-            CREATE / UPDATE
+            WRITE
+          </button>
+          <button
+            onClick={() => setActionType("READ")}
+            className={`flex-1 py-3 rounded font-bold text-[10px] sm:text-xs md:text-sm border transition-all ${
+              actionType === "READ"
+                ? "bg-green-600 border-green-500 text-white shadow-lg shadow-green-900/50"
+                : "bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-700"
+            }`}
+          >
+            READ
           </button>
           <button
             onClick={() => setActionType("DELETE")}
-            className={`flex-1 py-3 rounded font-bold text-sm border transition-all ${
+            className={`flex-1 py-3 rounded font-bold text-[10px] sm:text-xs md:text-sm border transition-all ${
               actionType === "DELETE"
                 ? "bg-red-600 border-red-500 text-white shadow-lg shadow-red-900/50"
                 : "bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-700"
@@ -120,7 +144,7 @@ export default function TransactionsPage() {
           </button>
         </div>
 
-        {/* config card */}
+        {/* Config Card */}
         <div className="bg-gray-800 p-5 rounded-lg mb-6 border border-gray-700">
           <h2 className="text-gray-400 text-xs font-bold uppercase tracking-widest mb-4">
             Step 3: Concurrency Control
@@ -143,7 +167,7 @@ export default function TransactionsPage() {
               </select>
             </div>
 
-            <div>
+            <div className={actionType === 'READ' ? "opacity-50 pointer-events-none" : ""}>
               <label className="block text-xs text-gray-500 mb-1">
                 Simulated Delay (ms)
               </label>
@@ -152,22 +176,23 @@ export default function TransactionsPage() {
                 className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm focus:border-blue-500 outline-none"
                 value={sleepTime}
                 onChange={(e) => setSleepTime(Number(e.target.value))}
+                placeholder={actionType === 'READ' ? "N/A" : "0"}
               />
             </div>
           </div>
         </div>
 
-        {/* data entry */}
+        {/* Data Entry */}
         <div className="bg-gray-800 p-5 rounded-lg mb-6 border border-gray-700 transition-all">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-gray-400 text-xs font-bold uppercase tracking-widest">
               Data Payload
             </h2>
-            <span
-              className={`text-[10px] font-mono border px-2 py-1 rounded ${targetColor}`}
-            >
-              {targetNode}
-            </span>
+            {actionType !== 'READ' && (
+                <span className={`text-[10px] font-mono border px-2 py-1 rounded ${targetColor}`}>
+                {targetNode}
+                </span>
+            )}
           </div>
 
           <div className="space-y-4">
@@ -183,7 +208,7 @@ export default function TransactionsPage() {
               />
             </div>
 
-            {/* conditional inputs for insert */}
+            {/* Conditional Inputs: Hide these if Reading or Deleting */}
             {actionType === "INSERT" && (
               <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
                 <div className="grid grid-cols-2 gap-4">
@@ -195,7 +220,7 @@ export default function TransactionsPage() {
                       className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm"
                       value={titleType}
                       onChange={(e) => setTitleType(e.target.value)}
-                      placeholder="movie, short, etc."
+                      placeholder="movie"
                     />
                   </div>
                   <div>
@@ -248,14 +273,18 @@ export default function TransactionsPage() {
           className={`w-full py-4 text-lg shadow-xl active:scale-95 transition-transform ${
             actionType === "DELETE"
               ? "bg-red-600 hover:bg-red-700 shadow-red-900/20"
+              : actionType === "READ"
+              ? "bg-green-600 hover:bg-green-700 shadow-green-900/20"
               : "bg-blue-600 hover:bg-blue-700 shadow-blue-900/20"
           }`}
         >
           {loading
             ? "Processing..."
             : actionType === "DELETE"
-            ? "EXECUTE GLOBAL DELETE"
-            : "EXECUTE WRITE TRANSACTION"}
+            ? "EXECUTE DELETE"
+            : actionType === "READ"
+            ? "EXECUTE READ"
+            : "EXECUTE WRITE"}
         </Button>
       </div>
 
