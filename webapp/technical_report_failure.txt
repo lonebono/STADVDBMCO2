@@ -1,0 +1,129 @@
+FAILURE RECOVERY LOGS
+Date: 2025-12-02T14:08:08.232Z
+================================
+
+--- ITERATION 1 ---
+Running Case #1: Node 2 -> Central (Write Failure)...
+
+[2025-12-02T14:09:21.274Z] [Iter 1] [Case 1: Write Failure]
+STATUS: {
+  "status": "success",
+  "results": {
+    "server0": "FAILED",
+    "server1": "SUCCESS"
+  }
+}
+--------------------------------------------------
+Running Case #2: Central Recovery...
+
+[2025-12-02T14:09:43.570Z] [Iter 1] [Case 2: Recovery Process]
+STATUS: {
+  "success": true,
+  "recovered": 0,
+  "message": "Recovered 0 transactions."
+}
+--------------------------------------------------
+Running Case #3: Central -> Node 2 (Write Failure)...
+
+[2025-12-02T14:10:05.544Z] [Iter 1] [Case 3: Write Failure]
+STATUS: {
+  "status": "success",
+  "results": {
+    "server0": "SUCCESS",
+    "server1": "FAILED"
+  }
+}
+--------------------------------------------------
+Running Case #4: Node 2 Recovery...
+
+[2025-12-02T14:10:23.027Z] [Iter 1] [Case 4: Recovery Process]
+STATUS: {
+  "success": true,
+  "recovered": 0,
+  "message": "Recovered 0 transactions."
+}
+--------------------------------------------------
+
+--- ITERATION 2 ---
+Running Case #1: Node 2 -> Central (Write Failure)...
+
+[2025-12-02T14:10:40.494Z] [Iter 2] [Case 1: Write Failure]
+STATUS: {
+  "status": "success",
+  "results": {
+    "server0": "FAILED",
+    "server1": "SUCCESS"
+  }
+}
+--------------------------------------------------
+Running Case #2: Central Recovery...
+
+[2025-12-02T14:10:55.972Z] [Iter 2] [Case 2: Recovery Process]
+STATUS: {
+  "success": true,
+  "recovered": 0,
+  "message": "Recovered 0 transactions."
+}
+--------------------------------------------------
+Running Case #3: Central -> Node 2 (Write Failure)...
+
+[2025-12-02T14:11:07.245Z] [Iter 2] [Case 3: Write Failure]
+STATUS: {
+  "status": "success",
+  "results": {
+    "server0": "SUCCESS",
+    "server1": "FAILED"
+  }
+}
+--------------------------------------------------
+Running Case #4: Node 2 Recovery...
+
+[2025-12-02T14:11:21.345Z] [Iter 2] [Case 4: Recovery Process]
+STATUS: {
+  "success": true,
+  "recovered": 0,
+  "message": "Recovered 0 transactions."
+}
+--------------------------------------------------
+
+--- ITERATION 3 ---
+Running Case #1: Node 2 -> Central (Write Failure)...
+
+[2025-12-02T14:11:54.676Z] [Iter 3] [Case 1: Write Failure]
+STATUS: {
+  "status": "success",
+  "results": {
+    "server0": "FAILED",
+    "server1": "SUCCESS"
+  }
+}
+--------------------------------------------------
+Running Case #2: Central Recovery...
+
+[2025-12-02T14:12:34.928Z] [Iter 3] [Case 2: Recovery Process]
+STATUS: {
+  "success": true,
+  "recovered": 0,
+  "message": "Recovered 0 transactions."
+}
+--------------------------------------------------
+Running Case #3: Central -> Node 2 (Write Failure)...
+
+[2025-12-02T14:12:51.192Z] [Iter 3] [Case 3: Write Failure]
+STATUS: {
+  "status": "success",
+  "results": {
+    "server0": "SUCCESS",
+    "server1": "FAILED"
+  }
+}
+--------------------------------------------------
+Running Case #4: Node 2 Recovery...
+
+[2025-12-02T14:12:58.841Z] [Iter 3] [Case 4: Recovery Process]
+STATUS: {
+  "success": true,
+  "recovered": 0,
+  "message": "Recovered 0 transactions."
+}
+--------------------------------------------------

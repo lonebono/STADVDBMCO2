@@ -1,0 +1,75 @@
+CONCURRENCY LOGS - SERIALIZABLE
+Date: 2025-12-02T14:07:52.761Z
+================================
+
+--- ITERATION 1 ---
+
+[2025-12-02T14:07:52.788Z] [Iter 1] [Case 1: Concurrent Reads]
+STATUS: {
+  "node2": "NETWORK_ERROR",
+  "node3": "NETWORK_ERROR",
+  "consistent": true
+}
+--------------------------------------------------
+
+[2025-12-02T14:07:56.832Z] [Iter 1] [Case 2: Read-Write Conflict]
+STATUS: {
+  "write_status": "success",
+  "read_outcome": "Blocked/Empty"
+}
+--------------------------------------------------
+
+[2025-12-02T14:07:56.896Z] [Iter 1] [Case 3: Write-Write Conflict]
+STATUS: {
+  "node1": "success",
+  "node2": "success"
+}
+--------------------------------------------------
+
+--- ITERATION 2 ---
+
+[2025-12-02T14:07:57.938Z] [Iter 2] [Case 1: Concurrent Reads]
+STATUS: {
+  "node2": "NETWORK_ERROR",
+  "node3": "NETWORK_ERROR",
+  "consistent": true
+}
+--------------------------------------------------
+
+[2025-12-02T14:08:01.981Z] [Iter 2] [Case 2: Read-Write Conflict]
+STATUS: {
+  "write_status": "success",
+  "read_outcome": "Blocked/Empty"
+}
+--------------------------------------------------
+
+[2025-12-02T14:08:02.058Z] [Iter 2] [Case 3: Write-Write Conflict]
+STATUS: {
+  "node1": "success",
+  "node2": "success"
+}
+--------------------------------------------------
+
+--- ITERATION 3 ---
+
+[2025-12-02T14:08:03.115Z] [Iter 3] [Case 1: Concurrent Reads]
+STATUS: {
+  "node2": "NETWORK_ERROR",
+  "node3": "NETWORK_ERROR",
+  "consistent": true
+}
+--------------------------------------------------
+
+[2025-12-02T14:08:07.152Z] [Iter 3] [Case 2: Read-Write Conflict]
+STATUS: {
+  "write_status": "success",
+  "read_outcome": "Blocked/Empty"
+}
+--------------------------------------------------
+
+[2025-12-02T14:08:07.220Z] [Iter 3] [Case 3: Write-Write Conflict]
+STATUS: {
+  "node1": "success",
+  "node2": "success"
+}
+--------------------------------------------------
