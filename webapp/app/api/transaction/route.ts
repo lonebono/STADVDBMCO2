@@ -2,13 +2,12 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import mysql from "mysql2/promise";
-import { NODES } from "../../../lib/nodes";
+import { NODES } from "@/lib/nodes";
 
 const FRAGMENTATION_YEAR = 1919;
-
 const CURRENT_NODE = process.env.NEXT_PUBLIC_SERVER_ID || "server0";
 
-//main post handler
+// Handle INSERT/UPDATE transaction
 export async function POST(req: NextRequest) {
   const body = await req.json();
   const {
@@ -21,20 +20,16 @@ export async function POST(req: NextRequest) {
     sleepTime = 0,
   } = body;
 
-  // connect to target nodes based on fragmentation
   const centralNode = "server0";
   const fragmentNode = startYear < FRAGMENTATION_YEAR ? "server1" : "server2";
   const targetNodes = [centralNode, fragmentNode];
+
   const results: Record<string, string> = {};
 
-  // execute writes on target nodes
   for (const targetNodeKey of targetNodes) {
     // @ts-ignore
     const config = NODES[targetNodeKey];
-
     try {
-      console.log(`[${CURRENT_NODE}] connecting to ${targetNodeKey}...`);
-
       const conn = await mysql.createConnection({
         host: config.host,
         port: config.port,
@@ -42,7 +37,6 @@ export async function POST(req: NextRequest) {
         password: config.password,
         database: config.database,
       });
-
       await conn.query(`SET TRANSACTION ISOLATION LEVEL ${isolationLevel}`);
       await conn.beginTransaction();
 
@@ -50,12 +44,8 @@ export async function POST(req: NextRequest) {
         INSERT INTO title_basics (tconst, titleType, primaryTitle, startYear, runtimeMinutes)
         VALUES (?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE 
-        titleType = VALUES(titleType),
-        primaryTitle = VALUES(primaryTitle),
-        startYear = VALUES(startYear),
-        runtimeMinutes = VALUES(runtimeMinutes)
+        titleType = VALUES(titleType), primaryTitle = VALUES(primaryTitle), startYear = VALUES(startYear), runtimeMinutes = VALUES(runtimeMinutes)
       `;
-
       await conn.execute(query, [
         tconst,
         titleType,
@@ -72,36 +62,74 @@ export async function POST(req: NextRequest) {
     } catch (err: any) {
       console.error(`Write failed to ${targetNodeKey}: ${err.message}`);
       results[targetNodeKey] = "FAILED";
+      if (targetNodeKey !== CURRENT_NODE)
+        await logFailureLocally(targetNodeKey, body, "INSERT");
+    }
+  }
 
-      //  failure logging step
-      // if the target is not self, must log that they missed this.
+  const status = Object.values(results).includes("SUCCESS")
+    ? "success"
+    : "failure";
+  return NextResponse.json({ status, results });
+}
+
+// Handle DELETE transaction
+export async function DELETE(req: NextRequest) {
+  const body = await req.json();
+  const { tconst, isolationLevel = "READ COMMITTED", sleepTime = 0 } = body;
+
+  // Broadcast DELETE to all nodes
+  const targetNodes = ["server0", "server1", "server2"];
+  const results: Record<string, string> = {};
+
+  for (const targetNodeKey of targetNodes) {
+    // @ts-ignore
+    const config = NODES[targetNodeKey];
+    try {
+      const conn = await mysql.createConnection({
+        host: config.host,
+        port: config.port,
+        user: config.user,
+        password: config.password,
+        database: config.database,
+      });
+
+      await conn.query(`SET TRANSACTION ISOLATION LEVEL ${isolationLevel}`);
+      await conn.beginTransaction();
+
+      const query = "DELETE FROM title_basics WHERE tconst = ?";
+      await conn.execute(query, [tconst]);
+
+      if (sleepTime > 0) await new Promise((r) => setTimeout(r, sleepTime));
+
+      await conn.commit();
+      await conn.end();
+      results[targetNodeKey] = "SUCCESS";
+    } catch (err: any) {
+      console.error(`Delete failed on ${targetNodeKey}: ${err.message}`);
+      results[targetNodeKey] = "FAILED";
+      // Log failure locally for recovery
       if (targetNodeKey !== CURRENT_NODE) {
-        await logFailureLocally(targetNodeKey, body);
+        await logFailureLocally(targetNodeKey, { tconst }, "DELETE");
       }
     }
   }
 
-  // Shield users: Return success if at least one node accepted the data
   const status = Object.values(results).includes("SUCCESS")
     ? "success"
     : "failure";
-
-  return NextResponse.json({
-    status,
-    results,
-    message:
-      status === "success"
-        ? "Transaction processed (potentially queued)."
-        : "System failure.",
-  });
+  return NextResponse.json({ status, results, message: "Delete broadcasted." });
 }
 
-// Helper to log missed transactions to MySQL (Step 4)
-async function logFailureLocally(failedNode: string, data: any) {
+// log failure locally for recovery
+async function logFailureLocally(
+  failedNode: string,
+  data: any,
+  opType: string = "INSERT"
+) {
   try {
     // @ts-ignore
-    const localConfig = NODES[CURRENT_NODE]; // Connect to Myself
-
+    const localConfig = NODES[CURRENT_NODE];
     const conn = await mysql.createConnection({
       host: localConfig.host,
       port: localConfig.port,
@@ -110,15 +138,15 @@ async function logFailureLocally(failedNode: string, data: any) {
       database: localConfig.database,
     });
 
+    // include operation type in recovery log
+    const recoveryPayload = { op: opType, payload: data };
+
     await conn.execute(
       `INSERT INTO recovery_log (failed_node, transaction_data, status) VALUES (?, ?, 'PENDING')`,
-      [failedNode, JSON.stringify(data)]
+      [failedNode, JSON.stringify(recoveryPayload)]
     );
     await conn.end();
-    console.log(
-      `[Recovery] Logged missed transaction for ${failedNode} into local DB.`
-    );
   } catch (e) {
-    console.error("CRITICAL: Local DB is down. Cannot log failure.", e);
+    console.error("CRITICAL: Local DB is down.", e);
   }
 }

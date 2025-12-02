@@ -2,6 +2,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import RecoverButton from "../../components/RecoverButton";
 
 type Server = "server0" | "server1" | "server2";
@@ -27,9 +28,8 @@ export default function DashboardPage() {
 
     const promises = servers.map(async (s) => {
       try {
-        // set a timeout so the dashboard doesn't hang if a node is down
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 3000); // 3s timeout
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
 
         const res = await fetch(`/api/db?server=${s}`, {
           signal: controller.signal,
@@ -58,11 +58,14 @@ export default function DashboardPage() {
 
   useEffect(() => {
     fetchNodeInfo();
-    const interval = setInterval(fetchNodeInfo, 10000); // refresh every 10s for better responsiveness during demo
+    const interval = setInterval(fetchNodeInfo, 10000);
     return () => clearInterval(interval);
   }, []);
 
   const totalRows = nodes.server0.rowCount ?? 1;
+
+  const formatTime = (date: Date) =>
+    `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
 
   return (
     <div className="flex flex-col gap-6 p-8 h-full bg-gray-900 text-white overflow-y-auto">
@@ -78,7 +81,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Node Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="flex flex-wrap gap-4">
         {(Object.keys(nodes) as Server[]).map((s) => {
           const node = nodes[s];
           const partitionPercent =
@@ -88,65 +91,75 @@ export default function DashboardPage() {
 
           // Card Styles based on Status
           const statusColors = node.online
-            ? "bg-gray-800 border-gray-700"
-            : "bg-red-950/30 border-red-800";
+            ? "bg-gray-800 border-gray-700 hover:border-gray-500"
+            : "bg-red-950/30 border-red-800 hover:border-red-600";
 
           return (
-            <div
+            <Link
               key={s}
-              className={`p-6 rounded-xl border shadow-xl flex flex-col gap-4 transition-all ${statusColors}`}
+              href={`/records?server=${s}`}
+              className="flex-1 min-w-[220px] group relative block transition-transform hover:scale-[1.02]"
             >
-              <div className="flex justify-between items-center">
-                <div className="flex items-center gap-2">
-                  <div
-                    className={`w-3 h-3 rounded-full ${
+              <div
+                className={`p-6 rounded-xl border shadow-xl flex flex-col gap-4 h-full transition-colors ${statusColors}`}
+              >
+                {/* Hover Arrow Indicator */}
+                <div className="absolute top-4 right-4 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity font-mono">
+                  ↗
+                </div>
+
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    <div
+                      className={`w-3 h-3 rounded-full ${
+                        node.online
+                          ? "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]"
+                          : "bg-red-500 animate-pulse"
+                      }`}
+                    />
+                    <h2 className="font-bold text-lg tracking-wide">
+                      {s.toUpperCase()}
+                    </h2>
+                  </div>
+                  <span
+                    className={`text-[10px] font-bold px-2 py-1 rounded uppercase ${
                       node.online
-                        ? "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]"
-                        : "bg-red-500 animate-pulse"
+                        ? "bg-green-900/30 text-green-400"
+                        : "bg-red-900/40 text-red-400"
                     }`}
-                  />
-                  <h2 className="font-bold text-lg tracking-wide">
-                    {s.toUpperCase()}
-                  </h2>
+                  >
+                    {node.online ? "Connected" : "Unreachable"}
+                  </span>
                 </div>
-                <span
-                  className={`text-[10px] font-bold px-2 py-1 rounded uppercase ${
-                    node.online
-                      ? "bg-green-900/30 text-green-400"
-                      : "bg-red-900/40 text-red-400"
-                  }`}
-                >
-                  {node.online ? "Connected" : "Unreachable"}
-                </span>
-              </div>
 
-              <div className="space-y-1">
-                <p className="text-gray-400 text-xs uppercase font-semibold">
-                  Row Count
-                </p>
-                <p className="text-3xl font-mono font-light tracking-tighter">
-                  {node.rowCount !== null
-                    ? node.rowCount.toLocaleString()
-                    : "---"}
-                </p>
-              </div>
+                <div className="space-y-1">
+                  <p className="text-gray-400 text-xs uppercase font-semibold">
+                    Row Count
+                  </p>
+                  <p className="text-3xl font-mono font-light tracking-tighter">
+                    {node.rowCount !== null
+                      ? node.rowCount.toLocaleString()
+                      : "---"}
+                  </p>
+                </div>
 
-              {/* Partition Visual */}
-              <div className="pt-2">
-                <div className="flex justify-between text-xs text-gray-500 mb-1">
-                  <span>Usage</span>
-                  <span>{partitionPercent}%</span>
-                </div>
-                <div className="w-full bg-gray-900/50 rounded-full h-1.5 overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all duration-500 ${
-                      node.online ? "bg-blue-500" : "bg-gray-700"
-                    }`}
-                    style={{ width: `${partitionPercent}%` }}
-                  />
+                {/* Partition Visual */}
+                <div className="pt-2 mt-auto">
+                  <div className="flex justify-between text-xs text-gray-500 mb-1">
+                    <span>Usage</span>
+                    <span>{partitionPercent}%</span>
+                  </div>
+                  <div className="w-full bg-gray-900/50 rounded-full h-1.5 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${
+                        node.online ? "bg-blue-500" : "bg-gray-700"
+                      }`}
+                      style={{ width: `${partitionPercent}%` }}
+                    />
+                  </div>
                 </div>
               </div>
-            </div>
+            </Link>
           );
         })}
       </div>
