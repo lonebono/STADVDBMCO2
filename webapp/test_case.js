@@ -1,259 +1,284 @@
 /**
- * STADVDB MCO2 - EVALUATION TEST SUITE
+ * STADVDB MCO2 - COMPLETE EVALUATION SUITE
+ * * BEHAVIOR:
+ * - Runs 3 Full Iterations.
+ * - In each iteration: Runs Step 3 (Concurrency) -> Step 4 (Failure).
+ * - Creates a NEW log file for each iteration (iter_1.txt, iter_2.txt, iter_3.txt).
  * * USAGE:
- * 1. Run Concurrency Tests (Step 3):
- * node test-suite.js --step3
- * * 2. Run Failure Tests (Step 4 - requires manual server crashing):
- * node test-suite.js --step4 --case=1  (Node 2 -> Central Fail)
- * node test-suite.js --step4 --case=3  (Central -> Node 2 Fail)
- * node test-suite.js --step4 --recover (Run Recovery)
+ * node test-suite.js
  */
 
 const fs = require("fs");
+const readline = require("readline");
 
-// ==========================================
-// CONFIGURATION
-// ==========================================
-// Update these IPs to match your ACTUAL Public URLs
+// 1. CONFIGURATION (Public Cloud URLs)
+
 const NODES = {
   server0: "http://ccscloud.dlsu.edu.ph:60205", // Central
-  server1: "http://ccscloud.dlsu.edu.ph:60206", // Node 2 (< 1919)
-  server2: "http://ccscloud.dlsu.edu.ph:60207", // Node 3 (>= 1919)
+  server1: "http://ccscloud.dlsu.edu.ph:60206", // Node 2
+  server2: "http://ccscloud.dlsu.edu.ph:60207", // Node 3
 };
 
-const LOG_FILE = "technical_report_logs.txt";
+// 2. HELPERS
 
-// ==========================================
-// HELPERS
-// ==========================================
-function log(message) {
-  console.log(message);
-  fs.appendFileSync(LOG_FILE, message + "\n");
+const rl = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout,
+});
+
+const askUser = (query) =>
+  new Promise((resolve) => rl.question(query, resolve));
+
+function logToFile(iter, text) {
+  const filename = `technical_report_iter_${iter}.txt`;
+  fs.appendFileSync(filename, text + "\n");
 }
 
-function logResult(step, caseName, iter, result) {
+function log(iter, message) {
+  console.log(message);
+  logToFile(iter, message);
+}
+
+function logResult(iter, step, caseName, data) {
   const timestamp = new Date().toISOString();
   const entry = `
-[${timestamp}] [${step}] [${caseName}] [Iter ${iter}]
-RESULT: ${JSON.stringify(result, null, 2)}
+[${timestamp}] [${step}] [${caseName}]
+STATUS: ${JSON.stringify(data, null, 2)}
 --------------------------------------------------`;
-  log(entry);
+  log(iter, entry);
 }
 
-async function sendTransaction(url, payload) {
+// HTTP Helpers
+async function sendRequest(url, method, body = null) {
   try {
-    const res = await fetch(url, {
-      method: "POST",
+    const options = {
+      method: method,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    };
+    if (body) options.body = JSON.stringify(body);
+
+    // Timeout to prevent hanging if server is totally dead (not just DB)
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(timeout);
     return await res.json();
   } catch (e) {
     return { error: e.message, status: "NETWORK_ERROR" };
   }
 }
 
-async function readTransaction(url) {
-  try {
-    const res = await fetch(url);
-    return await res.json();
-  } catch (e) {
-    return { error: e.message, status: "NETWORK_ERROR" };
-  }
+// 3. TEST LOGIC
+
+async function runIteration(iter) {
+  // Reset/Create Log File for this iteration
+  const filename = `technical_report_iter_${iter}.txt`;
+  fs.writeFileSync(
+    filename,
+    `MCO2 LOGS - ITERATION ${iter}\nDate: ${new Date().toISOString()}\n================================\n`
+  );
+
+  console.log(`\n\n=== STARTING ITERATION ${iter} ===`);
+  console.log(`Logs will be saved to: ${filename}`);
+
+  // -------------------------------------------------
+  // STEP 3: CONCURRENCY (Automated)
+  // -------------------------------------------------
+  log(iter, "\n--- STEP 3: CONCURRENCY CONTROL ---");
+
+  // Case 1: Concurrent Reads
+  log(iter, "Running Case #1: Concurrent Reads (Node 2 & 3)...");
+  const tconstRead = "tt0021000";
+  const p1 = sendRequest(
+    `${NODES.server1}/api/transaction/read?tconst=${tconstRead}&targetNode=central`,
+    "GET"
+  );
+  const p2 = sendRequest(
+    `${NODES.server2}/api/transaction/read?tconst=${tconstRead}&targetNode=central`,
+    "GET"
+  );
+  const [res1, res2] = await Promise.all([p1, p2]);
+
+  logResult(iter, "Step 3", "Case 1: Concurrent Reads", {
+    node2_status: res1.status || "Failed",
+    node3_status: res2.status || "Failed",
+    match: JSON.stringify(res1.data) === JSON.stringify(res2.data),
+  });
+
+  // Case 2: Read-Write Conflict
+  log(iter, "Running Case #2: Read-Write Conflict...");
+  const tconstRW = `tt_rw_${iter}`;
+  // Start Slow Write
+  const writePayload = {
+    tconst: tconstRW,
+    titleType: "test",
+    primaryTitle: `Locked ${iter}`,
+    startYear: 2025,
+    runtimeMinutes: 10,
+    isolationLevel: "READ COMMITTED",
+    sleepTime: 2000,
+  };
+  const writePromise = sendRequest(
+    `${NODES.server0}/api/transaction`,
+    "POST",
+    writePayload
+  );
+
+  // Immediate Read
+  await new Promise((r) => setTimeout(r, 500));
+  const readRes = await sendRequest(
+    `${NODES.server1}/api/transaction/read?tconst=${tconstRW}&targetNode=central`,
+    "GET"
+  );
+  const writeRes = await writePromise;
+
+  logResult(iter, "Step 3", "Case 2: Read-Write Conflict", {
+    write_status: writeRes.status,
+    read_data: readRes.data ? "Saw Data (Dirty/Old)" : "Blocked/Empty",
+  });
+
+  // Case 3: Write-Write Conflict
+  log(iter, "Running Case #3: Write-Write Conflict...");
+  const tconstWW = `tt_ww_${iter}`;
+  const payA = {
+    tconst: tconstWW,
+    titleType: "test",
+    primaryTitle: "Node 1 Win",
+    startYear: 2025,
+    runtimeMinutes: 10,
+    isolationLevel: "SERIALIZABLE",
+  };
+  const payB = {
+    tconst: tconstWW,
+    titleType: "test",
+    primaryTitle: "Node 2 Win",
+    startYear: 2025,
+    runtimeMinutes: 10,
+    isolationLevel: "SERIALIZABLE",
+  };
+
+  const reqA = sendRequest(`${NODES.server1}/api/transaction`, "POST", payA);
+  const reqB = sendRequest(`${NODES.server2}/api/transaction`, "POST", payB);
+  const [rA, rB] = await Promise.all([reqA, reqB]);
+
+  const finalRead = await sendRequest(
+    `${NODES.server0}/api/transaction/read?tconst=${tconstWW}`,
+    "GET"
+  );
+
+  logResult(iter, "Step 3", "Case 3: Write-Write Conflict", {
+    node1_write: rA.status,
+    node2_write: rB.status,
+    winner: finalRead.data?.primaryTitle,
+  });
+
+  // -------------------------------------------------
+  // STEP 4: FAILURE & RECOVERY (Interactive)
+  // -------------------------------------------------
+  log(iter, "\n--- STEP 4: FAILURE RECOVERY ---");
+
+  // SCENARIO A: Node 2 (Server 1) Fails (Covers Case 3 & 4)
+  console.log("\n[ACTION REQUIRED]");
+  await askUser(
+    ">>> Please STOP MySQL on SERVER 1 (Node 2). Press [Enter] when done..."
+  );
+
+  log(iter, "Running Case #3: Write to Central -> Node 2 (Should Fail)...");
+  const failPayload = {
+    tconst: `tt_fail_n2_${iter}`,
+    titleType: "test",
+    primaryTitle: "Logged on Central",
+    startYear: 1910, // < 1919 (Target: Node 2)
+    runtimeMinutes: 5,
+    targetNode: "central",
+  };
+  const resFail = await sendRequest(
+    `${NODES.server0}/api/transaction`,
+    "POST",
+    failPayload
+  );
+  logResult(iter, "Step 4", "Case 3: Write Failure (Node 2 Down)", resFail);
+
+  console.log("\n[ACTION REQUIRED]");
+  await askUser(
+    ">>> Please START MySQL on SERVER 1 (Node 2). Press [Enter] when done..."
+  );
+
+  log(iter, "Running Case #4: Recover Node 2...");
+  // We trigger recovery on Central (Server 0) because that's where the log is stored
+  const resRecover = await sendRequest(
+    `${NODES.server0}/api/recover`,
+    "POST",
+    {}
+  );
+  logResult(iter, "Step 4", "Case 4: Recovery (Central -> Node 2)", resRecover);
+
+  // Central Fails: Case 1 & 2
+  console.log("\n[ACTION REQUIRED]");
+  await askUser(
+    ">>> Please STOP MySQL on SERVER 0 (Central). Press [Enter] when done..."
+  );
+
+  log(iter, "Running Case #1: Write to Node 2 -> Central (Should Fail)...");
+  const failPayload2 = {
+    tconst: `tt_fail_c_${iter}`,
+    titleType: "test",
+    primaryTitle: "Logged on Node 2",
+    startYear: 1910, // < 1919 (target: server1)
+    runtimeMinutes: 5,
+    targetNode: "server1",
+  };
+  // send to server 1
+  const resFail2 = await sendRequest(
+    `${NODES.server1}/api/transaction`,
+    "POST",
+    failPayload2
+  );
+  logResult(iter, "Step 4", "Case 1: Write Failure (Central Down)", resFail2);
+
+  console.log("\n[ACTION REQUIRED]");
+  await askUser(
+    ">>> Please START MySQL on SERVER 0 (Central). Press [Enter] when done..."
+  );
+
+  log(iter, "Running Case #2: Recover Central...");
+  // trigger recovery on Server 1 because log is stored locally
+  const resRecover2 = await sendRequest(
+    `${NODES.server1}/api/recover`,
+    "POST",
+    {}
+  );
+  logResult(
+    iter,
+    "Step 4",
+    "Case 2: Recovery (Node 2 -> Central)",
+    resRecover2
+  );
+
+  console.log(`\n[SUCCESS] ITERATION ${iter} COMPLETE`);
 }
 
-// ==========================================
-// STEP 3: CONCURRENCY TESTS (Fully Automated)
-// ==========================================
+// 4. MAIN EXECUTION
 
-async function runStep3() {
-  log("\n=== STARTING STEP 3: CONCURRENCY CONTROL ===");
+async function main() {
+  console.log("STADVDB MCO2 Evaluation Suite");
+  console.log("Running 3 Full Iterations (Step 3 & 4)");
 
   for (let i = 1; i <= 3; i++) {
-    log(`\n--- ITERATION ${i} ---`);
-
-    // --- Case #1: Concurrent Reads ---
-    // Node 2 and Node 3 reading the same data item simultaneously
-    log("Running Case #1: Concurrent Reads...");
-    const tconstRead = "tt0021000";
-    const p1 = readTransaction(
-      `${NODES.server1}/api/transaction/read?tconst=${tconstRead}&targetNode=central`
-    );
-    const p2 = readTransaction(
-      `${NODES.server2}/api/transaction/read?tconst=${tconstRead}&targetNode=central`
-    );
-
-    const [res1, res2] = await Promise.all([p1, p2]);
-
-    logResult("Step 3", "Case 1: Concurrent Reads", i, {
-      node2_read: res1.status || "Failed",
-      node3_read: res2.status || "Failed",
-      consistent: JSON.stringify(res1.data) === JSON.stringify(res2.data),
-    });
-
-    // --- Case #2: Read-Write Conflict ---
-    // One transaction writes (update) while another reads the same item
-    log("Running Case #2: Read-Write Conflict...");
-    const tconstRW = `tt_rw_${i}`;
-
-    // Writer (Slow, 2s delay)
-    const writePayload = {
-      tconst: tconstRW,
-      titleType: "short",
-      primaryTitle: `Write In Progress ${i}`,
-      startYear: 2025,
-      runtimeMinutes: 10,
-      isolationLevel: "READ COMMITTED",
-      sleepTime: 2000,
-    };
-    const writePromise = sendTransaction(
-      `${NODES.server0}/api/transaction`,
-      writePayload
-    );
-
-    // Reader (Immediate - wait 500ms to ensure write started)
-    await new Promise((r) => setTimeout(r, 500));
-    const readRes = await readTransaction(
-      `${NODES.server1}/api/transaction/read?tconst=${tconstRW}&targetNode=central`
-    );
-    const writeRes = await writePromise;
-
-    logResult("Step 3", "Case 2: Read-Write Conflict", i, {
-      write_status: writeRes.status,
-      read_during_write: readRes.data
-        ? "Dirty Read / Old Data"
-        : "Clean / Blocked",
-      read_value: readRes.data,
-    });
-
-    // --- Case #3: Write-Write Conflict ---
-    // Two nodes writing to the same item simultaneously
-    log("Running Case #3: Write-Write Conflict...");
-    const tconstWW = `tt_ww_${i}`;
-
-    const payloadA = {
-      tconst: tconstWW,
-      titleType: "short",
-      primaryTitle: "Title From Node 1",
-      startYear: 2025,
-      runtimeMinutes: 10,
-      isolationLevel: "SERIALIZABLE",
-      sleepTime: 0,
-    };
-    const payloadB = {
-      tconst: tconstWW,
-      titleType: "short",
-      primaryTitle: "Title From Node 2",
-      startYear: 2025,
-      runtimeMinutes: 10,
-      isolationLevel: "SERIALIZABLE",
-      sleepTime: 0,
-    };
-
-    // Fire from two different nodes targeting the same Central data
-    const reqA = sendTransaction(`${NODES.server1}/api/transaction`, payloadA);
-    const reqB = sendTransaction(`${NODES.server2}/api/transaction`, payloadB);
-
-    const [resA, resB] = await Promise.all([reqA, reqB]);
-
-    // Verify who won
-    const finalRead = await readTransaction(
-      `${NODES.server0}/api/transaction/read?tconst=${tconstWW}&targetNode=central`
-    );
-
-    logResult("Step 3", "Case 3: Write-Write Conflict", i, {
-      node1_write: resA.status,
-      node2_write: resB.status,
-      final_winner: finalRead.data?.primaryTitle,
-    });
-
-    log("Cooldown 2s...");
-    await new Promise((r) => setTimeout(r, 2000));
-  }
-}
-
-// ==========================================
-// STEP 4: FAILURE RECOVERY (Semi-Automated)
-// ==========================================
-
-async function runStep4(args) {
-  const caseNum = args.find((a) => a.startsWith("--case="))?.split("=")[1];
-  const recover = args.includes("--recover");
-
-  if (recover) {
-    log("\n=== STEP 4: TRIGGERING RECOVERY ===");
-    // Try recovering on ALL nodes just to be safe
-    const p0 = sendTransaction(`${NODES.server0}/api/recover`, {});
-    const p1 = sendTransaction(`${NODES.server1}/api/recover`, {});
-    const p2 = sendTransaction(`${NODES.server2}/api/recover`, {});
-
-    const [r0, r1, r2] = await Promise.all([p0, p1, p2]);
-
-    logResult("Step 4", "Recovery Action", "Manual", {
-      server0_recovery: r0,
-      server1_recovery: r1,
-      server2_recovery: r2,
-    });
-    return;
+    await runIteration(i);
+    if (i < 3) {
+      console.log("...Cooling down (2s)...");
+      await new Promise((r) => setTimeout(r, 2000));
+    }
   }
 
-  if (caseNum === "1") {
-    // Case 1: Node 2 (Server 1) -> Central (Server 0) fails.
-    // REQUIREMENT: You must manually STOP MySQL on Server 0 before running this.
-    log("\n=== STEP 4 CASE 1: Node 2 -> Central (Fail) ===");
-    const payload = {
-      tconst: "tt_fail_case1",
-      titleType: "short",
-      primaryTitle: "Should Log Locally on Node 2",
-      startYear: 1910, // < 1919, belongs to Node 2 (Server 1)
-      runtimeMinutes: 5,
-      targetNode: "server1",
-    };
-    // We send this to Server 1. It will try to write to Server 0.
-    const res = await sendTransaction(
-      `${NODES.server1}/api/transaction`,
-      payload
-    );
-    logResult("Step 4", "Case 1: Write Failure", 1, res);
-  } else if (caseNum === "3") {
-    // Case 3: Central (Server 0) -> Node 2 (Server 1) fails.
-    // REQUIREMENT: You must manually STOP MySQL on Server 1 before running this.
-    log("\n=== STEP 4 CASE 3: Central -> Node 2 (Fail) ===");
-    const payload = {
-      tconst: "tt_fail_case3",
-      titleType: "short",
-      primaryTitle: "Should Log Locally on Central",
-      startYear: 1910, // < 1919, belongs to Node 2
-      runtimeMinutes: 5,
-      targetNode: "central",
-    };
-    // We send this to Server 0. It will try to write to Server 1.
-    const res = await sendTransaction(
-      `${NODES.server0}/api/transaction`,
-      payload
-    );
-    logResult("Step 4", "Case 3: Write Failure", 1, res);
-  } else {
-    console.log("Please specify a valid case: --case=1 or --case=3");
-    console.log(
-      "For Cases 2 & 4, simply run --recover after restarting the database."
-    );
-  }
+  console.log("\n=== ALL TESTS FINISHED ===");
+  console.log("Files generated:");
+  console.log("- technical_report_iter_1.txt");
+  console.log("- technical_report_iter_2.txt");
+  console.log("- technical_report_iter_3.txt");
+  rl.close();
 }
 
-// ==========================================
-// RUNNER
-// ==========================================
-const args = process.argv.slice(2);
-
-if (args.includes("--step3")) {
-  runStep3();
-} else if (args.includes("--step4")) {
-  runStep4(args);
-} else {
-  console.log("Usage:");
-  console.log("  node test-suite.js --step3");
-  console.log("  node test-suite.js --step4 --case=1");
-  console.log("  node test-suite.js --step4 --case=3");
-  console.log("  node test-suite.js --step4 --recover");
-}
+main();
